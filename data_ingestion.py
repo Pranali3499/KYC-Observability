@@ -17,7 +17,11 @@ from db_config import get_engine
 from provenance import log_provenance
 
 TABLE_NAME = "kyc_transactions"
-CHUNK_SIZE = 50_000  # batched writes, not row-by-row (avoids the earlier perf issue)
+# PostgreSQL allows a max of 65,535 bind parameters per statement.
+# With method="multi", pandas packs (columns x chunksize) parameters into
+# one INSERT -- at 33 columns, chunksize must stay well under 65535/33 (~1985)
+# to avoid PendingRollbackError from an aborted oversized statement.
+CHUNK_SIZE = 1_000
 
 
 def load_csv(csv_path: str) -> pd.DataFrame:
@@ -33,14 +37,23 @@ def write_to_postgres(df: pd.DataFrame):
 
     # if_exists="replace" on first run keeps re-runs idempotent for a demo;
     # switch to "append" once you're doing incremental loads.
-    df.to_sql(
-        TABLE_NAME,
-        engine,
-        if_exists="replace",
-        index=False,
-        chunksize=CHUNK_SIZE,
-        method="multi",
-    )
+    # method="multi" removed: at 33 columns, even a modest chunksize risks
+    # exceeding PostgreSQL's 65535 bind-parameter-per-statement limit.
+    # Default method (one INSERT per row via executemany) is slower but
+    # reliable, and psycopg2 batches it reasonably efficiently under the hood.
+    try:
+        df.to_sql(
+            TABLE_NAME,
+            engine,
+            if_exists="replace",
+            index=False,
+            chunksize=CHUNK_SIZE,
+        )
+    except Exception:
+        # Ensure no connection is left in a broken transaction state,
+        # which is what caused the PendingRollbackError on the retry.
+        engine.dispose()
+        raise
     print("Write complete.")
 
     with engine.connect() as conn:
