@@ -26,9 +26,8 @@ import json
 import time
 
 import pandas as pd
-from kafka import KafkaProducer
-from kafka.admin import KafkaAdminClient, NewTopic
-from kafka.errors import TopicAlreadyExistsError
+from confluent_kafka import Producer
+from confluent_kafka.admin import AdminClient, NewTopic
 from sqlalchemy import create_engine
 
 TOPIC_NAME = "kyc-onboarding-events"
@@ -38,14 +37,20 @@ DEFAULT_DB_URL = "postgresql://kyc_user:kyc_pass@localhost:5432/kyc_db"
 
 
 def ensure_topic_exists(bootstrap_servers: str, topic: str, num_partitions: int = 3):
-    admin = KafkaAdminClient(bootstrap_servers=bootstrap_servers)
-    try:
-        admin.create_topics([NewTopic(name=topic, num_partitions=num_partitions, replication_factor=1)])
-        print(f"Created topic '{topic}' ({num_partitions} partitions)")
-    except TopicAlreadyExistsError:
+    admin = AdminClient({"bootstrap.servers": bootstrap_servers})
+    existing = admin.list_topics(timeout=10).topics
+    if topic in existing:
         print(f"Topic '{topic}' already exists -- using it")
-    finally:
-        admin.close()
+        return
+
+    new_topic = NewTopic(topic, num_partitions=num_partitions, replication_factor=1)
+    result = admin.create_topics([new_topic])
+    for t, future in result.items():
+        try:
+            future.result()  # raises if creation failed
+            print(f"Created topic '{t}' ({num_partitions} partitions)")
+        except Exception as e:
+            print(f"Topic creation for '{t}' failed (may already exist): {e}")
 
 
 def load_sample_events(db_url: str, n_events: int) -> list[dict]:
@@ -58,6 +63,11 @@ def load_sample_events(db_url: str, n_events: int) -> list[dict]:
     )
     print(f"Loaded {len(df)} sample events")
     return df.to_dict(orient="records")
+
+
+def delivery_callback(err, msg):
+    if err is not None:
+        print(f"  [WARN] Delivery failed for key {msg.key()}: {err}")
 
 
 def main():
@@ -77,11 +87,7 @@ def main():
 
     events = load_sample_events(args.db_url, args.n_events)
 
-    producer = KafkaProducer(
-        bootstrap_servers=args.bootstrap_servers,
-        value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
-        key_serializer=lambda k: str(k).encode("utf-8"),
-    )
+    producer = Producer({"bootstrap.servers": args.bootstrap_servers})
 
     print(f"\nPublishing {len(events)} events to topic '{TOPIC_NAME}' "
           f"(delay={args.delay}s between events)...")
@@ -90,8 +96,10 @@ def main():
     for event in events:
         # row_id as the message key -- lets Kafka partition consistently
         # by applicant, and gives the consumer a natural dedup key
-        key = event.get("row_id", sent)
-        producer.send(TOPIC_NAME, key=key, value=event)
+        key = str(event.get("row_id", sent))
+        value = json.dumps(event, default=str)
+        producer.produce(TOPIC_NAME, key=key, value=value, callback=delivery_callback)
+        producer.poll(0)  # trigger delivery callbacks without blocking
         sent += 1
         if sent % 10 == 0 or sent == len(events):
             print(f"  Sent {sent}/{len(events)} events")
@@ -99,7 +107,6 @@ def main():
             time.sleep(args.delay)
 
     producer.flush()
-    producer.close()
 
     print(f"\n[producer] DONE -- {sent} events published to '{TOPIC_NAME}'")
 
