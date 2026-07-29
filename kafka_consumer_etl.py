@@ -86,16 +86,64 @@ def load_model():
     return model
 
 
-def engineer_features_single(event: dict) -> dict:
+def compute_feature_ranges(engine) -> dict:
+    """
+    Computes the min/max of each RAW (pre-normalization) feature score
+    across the full kyc_transactions table -- the same combined-formula
+    values that feature_engineering.py's _minmax() scales over in the
+    batch pipeline. Running this once at consumer startup (not guessing
+    fixed bounds) means real-time scoring uses the actual training-data
+    scale, not an approximation -- this replaces an earlier hardcoded
+    version that mis-scaled several features and pushed every event to
+    look anomalous.
+    """
+    print("Computing feature normalization ranges from kyc_transactions (one-time, at startup)...")
+    query = """
+        SELECT
+            MIN(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_min,
+            MAX(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_max,
+            MIN(device_distinct_emails_8w + 5*device_fraud_count) AS dev_min,
+            MAX(device_distinct_emails_8w + 5*device_fraud_count) AS dev_max,
+            MIN(GREATEST(current_address_months_count, 0)) AS addr_min,
+            MAX(GREATEST(current_address_months_count, 0)) AS addr_max,
+            MIN(name_email_similarity + phone_home_valid::int + phone_mobile_valid::int) AS ident_min,
+            MAX(name_email_similarity + phone_home_valid::int + phone_mobile_valid::int) AS ident_max,
+            MIN(foreign_request::int + (CASE WHEN source = 'TELEAPP' THEN 1 ELSE 0 END)) AS geo_min,
+            MAX(foreign_request::int + (CASE WHEN source = 'TELEAPP' THEN 1 ELSE 0 END)) AS geo_max,
+            MIN(credit_risk_score + proposed_credit_limit / NULLIF(income, 0)) AS fin_min,
+            MAX(credit_risk_score + proposed_credit_limit / NULLIF(income, 0)) AS fin_max
+        FROM kyc_transactions
+        WHERE income IS NOT NULL AND income != 0
+    """
+    with engine.connect() as conn:
+        row = conn.execute(text(query)).fetchone()
+
+    ranges = {
+        "session_velocity": (float(row.vel_min), float(row.vel_max)),
+        "device_reuse": (float(row.dev_min), float(row.dev_max)),
+        "address_stability": (float(row.addr_min), float(row.addr_max)),
+        "identity_consistency": (float(row.ident_min), float(row.ident_max)),
+        "geographic_risk": (float(row.geo_min), float(row.geo_max)),
+        "financial_risk": (float(row.fin_min), float(row.fin_max)),
+    }
+    print("Computed ranges:")
+    for k, (lo, hi) in ranges.items():
+        print(f"  {k}: [{lo:.2f}, {hi:.2f}]")
+    return ranges
+
+
+def engineer_features_single(event: dict, ranges: dict) -> dict:
     """
     Same logic as feature_engineering.py's engineer_features(), applied
-    to a single event dict instead of a DataFrame batch. Kept as simple
-    scalar arithmetic (no pandas/sklearn scaling) since real-time
-    scoring can't wait for a full-dataset min/max pass -- min/max
-    ranges are hardcoded to the mid-sem dataset's observed bounds.
-    This is a known simplification for the MVI; production would
-    persist per-feature scaling parameters from training, not
-    re-derive them.
+    to a single event dict instead of a DataFrame batch. Normalization
+    uses ranges computed from the real training data (see
+    compute_feature_ranges), not guessed fixed bounds -- this is a
+    documented simplification vs. the batch pipeline in one remaining
+    way: ranges are computed once at consumer startup rather than
+    updated as new data arrives, so a real production system would
+    need a periodic refresh or a persisted scaler artifact from
+    training. For this MVI, computing them once per run is sufficient
+    to prove the chain works correctly.
     """
     def safe_float(v, default=0.0):
         try:
@@ -128,20 +176,20 @@ def engineer_features_single(event: dict) -> dict:
     income = safe_float(event.get("income"), default=1.0) or 1.0
     financial_raw = credit_risk + (proposed_limit / income)
 
-    # Fixed normalization ranges approximating the training-set min/max
-    # (documented simplification -- see docstring above).
+    # Normalization using ranges computed from real training data
+    # (see compute_feature_ranges), not guessed fixed bounds.
     def clip01(x, lo, hi):
         if hi - lo == 0:
             return 0.0
         return min(max((x - lo) / (hi - lo), 0.0), 1.0)
 
     features = {
-        "session_velocity_score": clip01(session_velocity_raw, 0, 20),
-        "device_reuse_score": clip01(device_reuse_raw, 0, 10),
-        "address_stability_score": clip01(addr_tenure, 0, 400),
-        "identity_consistency_score": clip01(identity_raw, 0, 3),
-        "geographic_risk_score": clip01(geo_raw, 0, 2),
-        "financial_risk_score": clip01(financial_raw, 0, 5),
+        "session_velocity_score": clip01(session_velocity_raw, *ranges["session_velocity"]),
+        "device_reuse_score": clip01(device_reuse_raw, *ranges["device_reuse"]),
+        "address_stability_score": clip01(addr_tenure, *ranges["address_stability"]),
+        "identity_consistency_score": clip01(identity_raw, *ranges["identity_consistency"]),
+        "geographic_risk_score": clip01(geo_raw, *ranges["geographic_risk"]),
+        "financial_risk_score": clip01(financial_raw, *ranges["financial_risk"]),
     }
     return features
 
@@ -197,6 +245,8 @@ def main():
         conn.execute(text(CREATE_OUTPUT_TABLE_SQL))
         conn.commit()
 
+    ranges = compute_feature_ranges(engine)
+
     consumer = Consumer({
         "bootstrap.servers": args.bootstrap_servers,
         "group.id": CONSUMER_GROUP,
@@ -238,7 +288,7 @@ def main():
             row_id = event.get("row_id")
             fraud_bool = event.get("fraud_bool")
 
-            features = engineer_features_single(event)
+            features = engineer_features_single(event, ranges)
             X = pd.DataFrame([features])[FEATURE_COLUMNS]
 
             anomaly_score = float(-model.score_samples(X)[0])
