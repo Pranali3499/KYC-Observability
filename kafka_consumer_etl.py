@@ -63,10 +63,6 @@ FEATURE_COLUMNS = [
 ]
 
 # --- Prometheus metrics ---
-# Exposed at http://localhost:<metrics-port>/metrics, scraped by
-# Prometheus per the config in prometheus.yml. This is the last link
-# in the Kafka -> ETL -> feature store -> model -> Prometheus MVI
-# chain named in the evaluator feedback.
 EVENTS_PROCESSED = Counter(
     "kyc_events_processed_total", "Total onboarding events processed by the consumer"
 )
@@ -110,22 +106,43 @@ def load_model():
 
 def compute_feature_ranges(engine) -> dict:
     """
-    Computes the min/max of each RAW (pre-normalization) feature score
-    across the full kyc_transactions table -- the same combined-formula
-    values that feature_engineering.py's _minmax() scales over in the
-    batch pipeline. Running this once at consumer startup (not guessing
-    fixed bounds) means real-time scoring uses the actual training-data
-    scale, not an approximation -- this replaces an earlier hardcoded
-    version that mis-scaled several features and pushed every event to
-    look anomalous.
+    IMPORTANT (fixed): device_distinct_emails_8w carries BAF's -1
+    "missing" sentinel (see feature_engineering.py's clean_sentinels(),
+    which replaces it with the column median before computing
+    device_reuse_score). This function previously queried the raw,
+    UNCLEANED column, so the -1 values dragged dev_min down to -1 here
+    while the batch pipeline's range started from cleaned, non-negative
+    data -- a real batch/serving normalization mismatch, confirmed via
+    drift_detection.py (device_reuse_score showed KS ~0.97 across every
+    live sample size tested, the only feature that never settled down
+    as sample size grew). Now replicates the same median-imputation
+    step before computing the range.
     """
     print("Computing feature normalization ranges from kyc_transactions (one-time, at startup)...")
+
+    with engine.connect() as conn:
+        median_row = conn.execute(text(
+            "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY device_distinct_emails_8w) AS med "
+            "FROM kyc_transactions WHERE device_distinct_emails_8w != -1"
+        )).fetchone()
+    device_emails_median = float(median_row.med)
+    print(f"  device_distinct_emails_8w median (excluding -1 sentinel): {device_emails_median:.2f} "
+          f"-- matches feature_engineering.py's clean_sentinels() imputation")
+
     query = """
         SELECT
             MIN(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_min,
             MAX(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_max,
-            MIN(device_distinct_emails_8w + 5*device_fraud_count) AS dev_min,
-            MAX(device_distinct_emails_8w + 5*device_fraud_count) AS dev_max,
+            MIN(
+                CASE WHEN device_distinct_emails_8w = -1 THEN :device_emails_median
+                     ELSE device_distinct_emails_8w END
+                + 5*device_fraud_count
+            ) AS dev_min,
+            MAX(
+                CASE WHEN device_distinct_emails_8w = -1 THEN :device_emails_median
+                     ELSE device_distinct_emails_8w END
+                + 5*device_fraud_count
+            ) AS dev_max,
             MIN(GREATEST(current_address_months_count, 0)) AS addr_min,
             MAX(GREATEST(current_address_months_count, 0)) AS addr_max,
             MIN(name_email_similarity + phone_home_valid::int + phone_mobile_valid::int) AS ident_min,
@@ -138,7 +155,7 @@ def compute_feature_ranges(engine) -> dict:
         WHERE income IS NOT NULL AND income != 0
     """
     with engine.connect() as conn:
-        row = conn.execute(text(query)).fetchone()
+        row = conn.execute(text(query), {"device_emails_median": device_emails_median}).fetchone()
 
     ranges = {
         "session_velocity": (float(row.vel_min), float(row.vel_max)),
@@ -155,18 +172,6 @@ def compute_feature_ranges(engine) -> dict:
 
 
 def engineer_features_single(event: dict, ranges: dict) -> dict:
-    """
-    Same logic as feature_engineering.py's engineer_features(), applied
-    to a single event dict instead of a DataFrame batch. Normalization
-    uses ranges computed from the real training data (see
-    compute_feature_ranges), not guessed fixed bounds -- this is a
-    documented simplification vs. the batch pipeline in one remaining
-    way: ranges are computed once at consumer startup rather than
-    updated as new data arrives, so a real production system would
-    need a periodic refresh or a persisted scaler artifact from
-    training. For this MVI, computing them once per run is sufficient
-    to prove the chain works correctly.
-    """
     def safe_float(v, default=0.0):
         try:
             return float(v)
@@ -198,8 +203,6 @@ def engineer_features_single(event: dict, ranges: dict) -> dict:
     income = safe_float(event.get("income"), default=1.0) or 1.0
     financial_raw = credit_risk + (proposed_limit / income)
 
-    # Normalization using ranges computed from real training data
-    # (see compute_feature_ranges), not guessed fixed bounds.
     def clip01(x, lo, hi):
         if hi - lo == 0:
             return 0.0
@@ -320,7 +323,16 @@ def main():
                 features = engineer_features_single(event, ranges)
                 X = pd.DataFrame([features])[FEATURE_COLUMNS]
 
-                anomaly_score = float(-model.score_samples(X)[0])
+                anomaly_score = float(-model.decision_function(X)[0])
+                # NOTE (fixed): previously used -model.score_samples(X)[0].
+                # sklearn's decision_function(X) = score_samples(X) - offset_,
+                # so that version was a constant offset_ away from the batch
+                # pipeline's risk_anomaly_score_model (anomaly_detection.py
+                # also negates decision_function). Using score_samples directly
+                # here made every live score fall completely outside the
+                # batch score's range -- confirmed via drift_detection.py,
+                # which found zero bin overlap (KS=1.0) between the two.
+                # decision_function() now matches the batch definition exactly.
                 is_anomaly = bool(model.predict(X)[0] == -1)
 
                 latency_ms = (time.perf_counter() - start) * 1000
