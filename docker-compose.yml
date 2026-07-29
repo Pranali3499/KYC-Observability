@@ -73,9 +73,11 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
 
-  # Dashboard layer for Stage 5 (Observability) -- included now since
-  # it's zero extra effort alongside Prometheus. Visit
-  # http://localhost:3000 (default login admin/admin).
+  # Dashboard layer for Stage 5 (Observability). Prometheus data source
+  # and the KYC dashboard are auto-provisioned on startup (see
+  # grafana/provisioning/) -- no manual UI setup needed, and the
+  # dashboard definition lives in git like everything else in this
+  # project. Visit http://localhost:3000 (default login admin/admin).
   grafana:
     image: grafana/grafana:latest
     container_name: kyc-grafana
@@ -84,6 +86,8 @@ services:
       - "3000:3000"
     volumes:
       - kyc_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     depends_on:
       - prometheus
 

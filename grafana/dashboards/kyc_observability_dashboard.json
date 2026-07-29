@@ -1,0 +1,116 @@
+{
+  "title": "KYC Behavioral Observability - Real-Time Pipeline",
+  "uid": "kyc-observability-main",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Consumer Status",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "up{job=\"kyc-consumer\"}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Events Processed (Total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "kyc_events_processed_total", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Anomalies Flagged (Total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "kyc_anomalies_flagged_total", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "orange", "value": null }] } } }
+    },
+    {
+      "id": 4,
+      "title": "Anomaly Rate (%)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "100 * kyc_anomalies_flagged_total / kyc_events_processed_total", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 5 }, { "color": "red", "value": 15 }] }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Processing Errors (Total)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "kyc_processing_errors_total", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Inference Latency Percentiles (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(kyc_inference_latency_ms_bucket) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(kyc_inference_latency_ms_bucket) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(kyc_inference_latency_ms_bucket) by (le))", "legendFormat": "P99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 7,
+      "title": "Events Processed Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "kyc_events_processed_total", "legendFormat": "Events Processed", "refId": "A" },
+        { "expr": "kyc_anomalies_flagged_total", "legendFormat": "Anomalies Flagged", "refId": "B" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Latency Distribution (heatmap)",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "sum(increase(kyc_inference_latency_ms_bucket[5m])) by (le)", "format": "heatmap", "legendFormat": "{{le}}", "refId": "A" }
+      ]
+    }
+  ]
+}
