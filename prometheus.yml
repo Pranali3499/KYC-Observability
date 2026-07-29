@@ -1,0 +1,20 @@
+# prometheus.yml
+# Scrape configuration for the Behavioral Observability Framework.
+#
+# kafka_consumer_etl.py exposes metrics on the Windows host (not
+# inside a Docker container), so Prometheus -- itself running inside
+# Docker -- needs host.docker.internal to reach it. This is Docker
+# Desktop's built-in DNS name for "the machine Docker is running on",
+# and works on Windows/Mac without extra configuration.
+
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "kyc-consumer"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
