@@ -1,5 +1,4 @@
 name: CI
-
 # Runs on every push and pull request against master.
 #
 # Scope note (documented honestly, see documents/testing_scope.md):
@@ -11,47 +10,47 @@ name: CI
 # are instead run manually against the local Docker Compose stack
 # per the steps in documents/runbook.md. A production system would
 # extend this workflow with service containers for integration tests.
-
 on:
   push:
     branches: [master, main]
   pull_request:
     branches: [master, main]
-
 jobs:
   test:
     runs-on: windows-latest
     # windows-latest matches the actual development/deployment
     # environment used throughout this project (see dev log --
     # venv path issues, Git Bash usage, etc. were all Windows-specific)
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-
       - name: Syntax check all Python scripts
         # Catches broken imports/syntax errors early -- cheap, fast,
         # matches the "schema validation" spirit of the CI/CD gates
         # requested in the evaluator feedback, scoped to what's
         # feasible without live services.
+        #
+        # FIXED: previously ran `python -m py_compile *.py`, which
+        # failed with "[Errno 22] Invalid argument: '*.py'" on
+        # windows-latest -- PowerShell (like cmd.exe) does not expand
+        # a bare *.py wildcard into filenames for an external command's
+        # argument the way bash does. Doing the file-discovery inside
+        # Python itself (via glob) sidesteps shell-globbing behavior
+        # entirely, so it works identically regardless of OS/shell.
         run: |
-          python -m py_compile *.py
-
+          python -c "import glob, subprocess, sys; files = [f for f in glob.glob('**/*.py', recursive=True) if 'venv' not in f and '__pycache__' not in f]; print(f'Compiling {len(files)} files...'); [subprocess.run([sys.executable, '-m', 'py_compile', f], check=True) for f in files]; print('All files compiled successfully.')"
       - name: Run unit tests
         run: |
           pytest tests/ -v --tb=short
-
       - name: Data quality check script -- syntax + dry structure only
         # NOTE: does not connect to a live database in CI (no
         # Postgres service container configured for this PoC scope).
