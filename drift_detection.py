@@ -56,6 +56,7 @@ from scipy.stats import ks_2samp
 from sqlalchemy import text, inspect
 from db_config import get_engine
 from provenance import log_provenance
+from alerting import send_drift_alert
 
 TUNED_MODEL_PATH = "isolation_forest_tuned.pkl"  # same model kafka_consumer_etl.py uses
 
@@ -295,6 +296,8 @@ def main():
         print(f"[drift] WARNING -- {n_warn} feature(s) show moderate drift.{sample_caveat} Monitor closely.")
     else:
         print(f"[drift] PASS -- No significant drift detected across monitored features.{sample_caveat}")
+
+    send_drift_alert(report, len(live), is_synthetic)
 
     log_provenance(
         engine,
