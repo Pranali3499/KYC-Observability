@@ -1,1 +1,31 @@
+# Model artifacts — large, regenerable by re-running the training/tuning
+# scripts (mlflow_optuna_tuning.py etc.). GitHub rejects files >100MB
+# anyway (isolation_forest_tuned.pkl is 640MB).
+*.pkl
+
+# MLflow tracking data — regenerable, and grows large over repeated runs
+mlruns/
+mlflow.db
+
+# Raw datasets — large, and these are DATA not CODE. Document in your
+# README/report how to obtain the BAF dataset instead of versioning it.
+Base.csv
+Variant*.csv
 liveness_data/
+
+# Python environment / caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Streamlit local config (machine-specific, not project config)
+.streamlit/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+
+# Temp files
+tempCodeRunnerFile*
