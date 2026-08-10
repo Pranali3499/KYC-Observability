@@ -25,13 +25,16 @@ import sys
 import pandas as pd
 from sqlalchemy import create_engine, text
 
+from db_config import DB_URL as _DEFAULT_DB_URL
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_DB_URL = os.environ.get(
-    "KYC_DB_URL", "postgresql://postgres:postgres@localhost:5432/kyc_db"
-)
+# Falls back to the centralized credentials in db_config.py (kyc_user/kyc_db)
+# instead of a hardcoded postgres/postgres default -- keeps this script in
+# sync with the rest of the pipeline, which already reads db_config.get_engine().
+DEFAULT_DB_URL = os.environ.get("KYC_DB_URL", _DEFAULT_DB_URL)
 
 # Null-rate threshold: behavioral_features should be FULLY imputed by the
 # feature-engineering step (Demo Piece 2 already handles -1 sentinels), so
