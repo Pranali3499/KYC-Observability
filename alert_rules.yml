@@ -1,0 +1,149 @@
+# alert_rules.yml
+# ---------------------------------------------------------------
+# Prometheus alerting rules for the KYC Behavioral Observability
+# Framework's real-time scoring pipeline.
+#
+# Responds directly to mid-sem feedback: "Implement alert rules for
+# latency > X ms, error rate > Y%, and model drift signals."
+#
+# Drift rules (kyc_model_drift group) are fed by drift_metrics_exporter.py,
+# a standalone script that reads the existing drift_report Postgres
+# table and re-exposes it as Prometheus gauges -- confirmed working
+# live: FeatureDriftDetected correctly went PENDING on exactly the 3
+# genuinely-drifted features (session_velocity_score,
+# address_stability_score, model_anomaly_score) while leaving the 3
+# untouched features alone. ModelOutputDrift's query was corrected
+# after this same live test showed it staying permanently INACTIVE --
+# see the comment on that rule below for exactly what was wrong and
+# how it was fixed.
+#
+# Latency/error rules (kyc_scoring_latency, kyc_scoring_errors groups)
+# read metrics already exposed by kafka_consumer_etl.py on its
+# /metrics endpoint -- confirmed live earlier (events processed,
+# anomalies flagged, latency histogram, errors). These have NOT been
+# independently confirmed to fire correctly the way the drift rules
+# have -- the metric names (inference_latency_ms_bucket,
+# scoring_errors_total, events_processed_total) are inferred from
+# what kafka_consumer_etl.py is known to expose, not confirmed via a
+# raw read of its /metrics output the way the drift metric names were.
+# If these show unexpectedly as INACTIVE/UNKNOWN even while the
+# consumer is running, check kafka_consumer_etl.py's actual metric
+# names and adjust the expr: lines below to match.
+#
+# SETUP (three steps):
+#   1. Place this file at the project root, alongside prometheus.yml
+#      and docker-compose.yml: alert_rules.yml
+#   2. prometheus.yml must have:
+#        rule_files:
+#          - "alert_rules.yml"
+#   3. docker-compose.yml's prometheus service must mount this file
+#      into the container (in ADDITION to prometheus.yml) -- easy to
+#      miss, confirmed live that skipping this step silently produces
+#      "No rules found" with no error:
+#        volumes:
+#          - ./prometheus.yml:/etc/prometheus/prometheus.yml
+#          - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
+#          - kyc_prometheus_data:/prometheus
+#      then recreate the container (a plain "restart" is NOT enough
+#      for a new volume mount to take effect):
+#        docker compose up -d
+#   4. (Optional, for actual alert delivery -- not required for the
+#      rules themselves to evaluate and show as firing in Prometheus's
+#      own UI at http://localhost:9090/alerts) wire an Alertmanager
+#      container and point Prometheus at it via `alerting:` config.
+#      Without this, firing alerts are still visible in the
+#      Prometheus UI, they just won't be pushed to Slack/Teams/etc.
+#      (alerting.py in this project already handles Slack/Teams
+#      delivery at the application level, independently of this file
+#      -- see that script's own docstring.)
+# ---------------------------------------------------------------
+
+groups:
+  - name: kyc_scoring_latency
+    rules:
+      - alert: HighInferenceLatencyP95
+        # Threshold matches this project's own acceptance criterion:
+        # P95 <= 100ms (Section 3.2 of the report). Fires if the
+        # real, measured P95 exceeds that target.
+        expr: histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m])) > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 inference latency exceeds 100ms target"
+          description: "P95 scoring latency has been above the 100ms acceptance-criteria threshold for over 2 minutes. Live-verified baseline under normal load: ~30-50ms per record."
+
+      - alert: HighInferenceLatencyP95_Critical
+        # A harder threshold -- 2x the target -- to distinguish a
+        # borderline slowdown from a serious one.
+        expr: histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m])) > 200
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "P95 inference latency more than 2x the target"
+          description: "P95 latency has exceeded 200ms (double the 100ms acceptance target) for over 1 minute -- investigate immediately, this is a significant degradation from the ~30-50ms live-verified baseline."
+
+  - name: kyc_scoring_errors
+    rules:
+      - alert: HighErrorRate
+        # Y% threshold: 5% of scored events erroring is treated as
+        # the warning line. Adjust to your operational tolerance.
+        expr: (rate(scoring_errors_total[5m]) / rate(events_processed_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scoring error rate above 5%"
+          description: "More than 5% of onboarding events are failing to score successfully over the last 5 minutes. Live-verified baseline: 0 errors across a 200-event test run."
+
+      - alert: ConsumerDown
+        # This directly reflects a real behavior you saw live tonight:
+        # the /metrics endpoint (and therefore this target) only
+        # exists while kafka_consumer_etl.py is actively running.
+        # This alert fires when the consumer has been unreachable
+        # for longer than a normal idle gap between demo/batch runs.
+        expr: up{job="kafka_consumer_etl"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer target is down"
+          description: "Prometheus has not been able to scrape the kafka_consumer_etl /metrics endpoint for over 10 minutes. Expected when the consumer script is not currently running; unexpected if it should be processing a live event stream."
+
+  - name: kyc_model_drift
+    rules:
+      - alert: FeatureDriftDetected
+        # Mirrors this project's own PSI classification thresholds
+        # (PSI < 0.1 = stable, 0.1-0.25 = moderate, > 0.25 = significant).
+        # Excludes model_anomaly_score here -- that gets its own,
+        # higher-severity rule below (ModelOutputDrift), since a shift
+        # in the model's own output is a stronger signal than an
+        # input feature drifting on its own.
+        expr: kyc_feature_psi{feature!="model_anomaly_score"} > 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Significant feature drift detected (PSI > 0.25) on {{ $labels.feature }}"
+          description: "Feature '{{ $labels.feature }}' shows PSI={{ $value }} against the training reference distribution -- live-verified example during a synthetic-drift test: session_velocity_score, address_stability_score, and model_anomaly_score all exceeded this threshold when drift was deliberately induced."
+
+      - alert: ModelOutputDrift
+        # FIX: the earlier version of this rule queried a metric name
+        # (kyc_model_output_psi) that drift_metrics_exporter.py never
+        # actually creates -- the model's own output score is exported
+        # as just another labeled row inside kyc_feature_psi, tagged
+        # feature="model_anomaly_score", not as a separately-named
+        # metric. Confirmed live: this original version stayed
+        # permanently INACTIVE even while real ALERT-path drift data
+        # (including model_anomaly_score at PSI=2.5542) was being
+        # actively exported and scraped -- the query simply had
+        # nothing to match against. This corrected version queries the
+        # real label combination instead.
+        expr: kyc_feature_psi{feature="model_anomaly_score"} > 0.25
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model output score distribution has drifted (PSI={{ $value }})"
+          description: "The tuned model's own anomaly-score output distribution has shifted significantly from its training-time distribution -- this is a stronger signal than input-feature drift alone, since it reflects the model's actual behavior, not just its inputs. Per this project's validated findings, PSI alone can miss shifts that a KS test catches (e.g. device_reuse_score showed PSI=0.0001 but KS_p≈0 under induced drift) -- consider pairing this alert with a scheduled KS-based check (kyc_feature_ks_p) rather than relying on PSI in isolation."

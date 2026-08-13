@@ -61,6 +61,13 @@ services:
   # the Windows host, not in a container -- see prometheus.yml for
   # the host.docker.internal target). Completes the Kafka -> ETL ->
   # feature store -> model -> Prometheus MVI chain.
+  #
+  # alert_rules.yml is mounted alongside prometheus.yml so Prometheus
+  # can load and evaluate the latency/error-rate/drift alert rules
+  # referenced by prometheus.yml's rule_files: section -- without this
+  # mount, prometheus.yml can point at alert_rules.yml all it wants,
+  # but the file won't actually exist inside the container's
+  # filesystem and Prometheus will report "No rules found."
   prometheus:
     image: prom/prometheus:latest
     container_name: kyc-prometheus
@@ -69,6 +76,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
       - kyc_prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
