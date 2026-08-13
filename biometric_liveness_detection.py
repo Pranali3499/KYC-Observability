@@ -20,6 +20,16 @@ from the pre-deep-learning literature (spoofed/printed/screen-replayed
 faces have different micro-texture statistics than real skin) -- a
 legitimate, lightweight PoC baseline that doesn't require GPU/TensorFlow.
 
+--- CHANGE LOG (added to close mid-sem evaluator feedback gap) ---
+Added: per-record test-set results are now persisted to a
+'liveness_results' table (previously y_test/y_score existed only in
+memory and were discarded after computing aggregate AUC/FAR/FRR).
+This is what lets biometric_etl_normalize.py pick this component up
+alongside document_ocr_results and identity_mismatch_results, closing
+the "produce feature-ready parquet files" gap for this sub-component.
+No other logic in this script was changed.
+--------------------------------------------------------------------
+
 EXPECTED FOLDER LAYOUT (standard for most Kaggle real/fake face sets):
     <data_dir>/
         real/
@@ -49,6 +59,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
+import pandas as pd
 from PIL import Image
 from skimage.feature import local_binary_pattern
 from skimage.color import rgb2gray
@@ -62,6 +73,7 @@ from db_config import get_engine
 MLFLOW_EXPERIMENT_NAME = "kyc-biometric-validation"
 MODEL_OUTPUT_PATH = "liveness_model.pkl"
 ROC_FIGURE_PATH = "liveness_roc_curve.png"
+RESULTS_TABLE = "liveness_results"
 
 IMAGE_SIZE = (128, 128)
 LBP_RADIUS = 3
@@ -132,6 +144,25 @@ def far_frr_at_threshold(y_true: np.ndarray, y_score: np.ndarray, threshold: flo
     return far, frr
 
 
+def write_per_record_results(engine, y_test: np.ndarray, y_score: np.ndarray) -> int:
+    """
+    Persists the test-set results this script already computes -- one
+    row per held-out test image, with its true label, the model's
+    predicted "is real/live" probability, and a default (threshold=0.5)
+    pass/fail call. This did not exist before; y_test/y_score were
+    previously discarded after being used only for aggregate AUC/FAR/FRR.
+    """
+    results_df = pd.DataFrame({
+        "image_index": range(len(y_test)),
+        "true_label": y_test.astype(int),          # 1 = real/live, 0 = fake/spoof
+        "predicted_liveness_score": y_score,        # P(real/live)
+        "predicted_real": (y_score >= 0.5).astype(int),
+    })
+    results_df.to_sql(RESULTS_TABLE, engine, if_exists="replace", index=False)
+    print(f"Wrote {len(results_df):,} per-image results to '{RESULTS_TABLE}'")
+    return len(results_df)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Stage 4: Liveness detection validation")
     parser.add_argument("--data-dir", required=True, help="Path to dataset root folder")
@@ -170,6 +201,10 @@ def main():
         print(f"{t:<12}{far:<10.4f}{frr:<10.4f}")
         far_frr_table.append({"threshold": t, "far": far, "frr": frr})
 
+    # --- NEW: persist per-record results before y_test/y_score go out of scope ---
+    engine = get_engine()
+    write_per_record_results(engine, y_test, y_score)
+
     plt.figure(figsize=(6, 6))
     plt.plot(fpr, tpr, label=f"AUC = {auc:.4f}")
     plt.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Random baseline")
@@ -200,12 +235,11 @@ def main():
     print(f"Saved model to '{MODEL_OUTPUT_PATH}'")
 
     try:
-        engine = get_engine()
         log_provenance(
             engine,
             script_name="biometric_liveness_detection.py",
             source_dataset=args.data_dir,
-            target_table="liveness_model.pkl",
+            target_table=f"liveness_model.pkl, {RESULTS_TABLE}",
             row_count=len(y),
             notes=f"AUC={auc:.4f}",
         )

@@ -26,6 +26,16 @@ recognition (that would be a deep embedding model, e.g. FaceNet), but
 it is a legitimate, explainable baseline for a dissertation-level PoC,
 and the report can note deep embeddings as future work.
 
+--- CHANGE LOG (added to close mid-sem evaluator feedback gap) ---
+Added: per-record test-set results are now persisted to a
+'face_match_results' table (previously y_test/y_score existed only
+in memory and were discarded after computing aggregate AUC/FAR/FRR).
+This is what lets biometric_etl_normalize.py pick this component up
+alongside document_ocr_results and identity_mismatch_results, closing
+the "produce feature-ready parquet files" gap for this sub-component.
+No other logic in this script was changed.
+--------------------------------------------------------------------
+
 Usage:
     python biometric_face_matching.py
 
@@ -42,6 +52,7 @@ matplotlib.use("Agg")  # no GUI backend needed, just saving figures
 import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
+import pandas as pd
 from sklearn.datasets import fetch_lfw_pairs
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
@@ -53,6 +64,7 @@ from db_config import get_engine
 MLFLOW_EXPERIMENT_NAME = "kyc-biometric-validation"
 MODEL_OUTPUT_PATH = "face_match_model.pkl"
 ROC_FIGURE_PATH = "face_match_roc_curve.png"
+RESULTS_TABLE = "face_match_results"
 
 # FAR = False Accept Rate: different-person pairs wrongly called "same"
 #       (a security risk -- lets an impostor through)
@@ -94,6 +106,25 @@ def far_frr_at_threshold(y_true: np.ndarray, y_score: np.ndarray, threshold: flo
     return far, frr
 
 
+def write_per_record_results(engine, y_test: np.ndarray, y_score: np.ndarray) -> int:
+    """
+    Persists the test-set results this script already computes -- one
+    row per LFW test pair, with its true label, the model's predicted
+    match probability, and a default (threshold=0.5) pass/fail call.
+    This did not exist before; y_test/y_score were previously discarded
+    after being used only for aggregate AUC/FAR/FRR computation.
+    """
+    results_df = pd.DataFrame({
+        "pair_index": range(len(y_test)),
+        "true_label": y_test.astype(int),          # 1 = same person, 0 = different person
+        "predicted_match_score": y_score,           # P(same person), i.e. face-match confidence
+        "predicted_match": (y_score >= 0.5).astype(int),
+    })
+    results_df.to_sql(RESULTS_TABLE, engine, if_exists="replace", index=False)
+    print(f"Wrote {len(results_df):,} per-pair results to '{RESULTS_TABLE}'")
+    return len(results_df)
+
+
 def main():
     print("=" * 65)
     print("STAGE 4 -- Biometric Validation: Face Matching (LFW)")
@@ -131,6 +162,10 @@ def main():
         print(f"{t:<12}{far:<10.4f}{frr:<10.4f}")
         far_frr_table.append({"threshold": t, "far": far, "frr": frr})
 
+    # --- NEW: persist per-record results before y_test/y_score go out of scope ---
+    engine = get_engine()
+    write_per_record_results(engine, y_test, y_score)
+
     # ROC curve figure -- a direct report figure
     plt.figure(figsize=(6, 6))
     plt.plot(fpr, tpr, label=f"AUC = {auc:.4f}")
@@ -163,12 +198,11 @@ def main():
     print(f"Saved model + PCA transform to '{MODEL_OUTPUT_PATH}'")
 
     try:
-        engine = get_engine()
         log_provenance(
             engine,
             script_name="biometric_face_matching.py",
             source_dataset="LFW (Labeled Faces in the Wild, via sklearn)",
-            target_table="face_match_model.pkl",
+            target_table=f"face_match_model.pkl, {RESULTS_TABLE}",
             row_count=len(y_train) + len(y_test),
             notes=f"AUC={auc:.4f}",
         )
