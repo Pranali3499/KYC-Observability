@@ -23,10 +23,16 @@ Usage:
 
 Requires:
     pip install shap matplotlib
+
+DIAGNOSTIC BUILD: adds timing prints around each major step so a slow
+run can be attributed to a specific stage (DB load, full-dataset scoring,
+TreeExplainer construction, or the SHAP value computation itself) instead
+of being a black box.
 """
 
 import argparse
 import os
+import time
 
 import joblib
 import matplotlib
@@ -75,17 +81,29 @@ CREATE TABLE IF NOT EXISTS {OUTPUT_TABLE} (
 """
 
 
+def _t(label, start):
+    elapsed = time.time() - start
+    print(f"  [TIMING] {label}: {elapsed:.1f}s")
+
+
 def load_data_and_model(db_url: str, n_samples: int):
+    t0 = time.time()
     print(f"Loading tuned model from '{TUNED_MODEL_PATH}'...")
     model = joblib.load(TUNED_MODEL_PATH)
+    _t("load model", t0)
 
     print(f"Loading '{SOURCE_TABLE}' and identifying flagged anomalies...")
+
+    t0 = time.time()
     engine = create_engine(db_url)
     df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE}", engine)
+    _t(f"SELECT * FROM {SOURCE_TABLE} ({len(df):,} rows)", t0)
 
+    t0 = time.time()
     X_full = df[FEATURE_COLUMNS]
     predictions = model.predict(X_full)
     df["is_anomaly"] = predictions == -1
+    _t(f"model.predict() on full {len(df):,}-row table", t0)
 
     anomalies = df[df["is_anomaly"]]
     print(f"Total flagged anomalies in dataset: {len(anomalies):,}")
@@ -99,9 +117,15 @@ def load_data_and_model(db_url: str, n_samples: int):
 
 
 def compute_shap_values(model, X: pd.DataFrame):
-    print("Building SHAP TreeExplainer (Isolation Forest is tree-based, so this applies natively)...")
+    print(f"Building SHAP TreeExplainer for {len(X):,} records "
+          f"(Isolation Forest is tree-based, so this applies natively)...")
+    t0 = time.time()
     explainer = shap.TreeExplainer(model)
+    _t("build TreeExplainer (parses forest structure)", t0)
+
+    t0 = time.time()
     shap_values = explainer.shap_values(X)
+    _t(f"explainer.shap_values() on {len(X):,} records -- THIS IS USUALLY THE SLOW STEP", t0)
     return shap_values, explainer
 
 
@@ -117,6 +141,7 @@ def top_drivers_per_record(shap_values: np.ndarray, feature_names: list, k: int 
 
 def write_explanations(engine, sample: pd.DataFrame, shap_values: np.ndarray,
                         model, feature_names: list):
+    t0 = time.time()
     anomaly_scores = -model.score_samples(sample[feature_names])
     drivers = top_drivers_per_record(shap_values, feature_names, k=3)
 
@@ -141,12 +166,14 @@ def write_explanations(engine, sample: pd.DataFrame, shap_values: np.ndarray,
         conn.execute(text(CREATE_OUTPUT_TABLE_SQL))
         conn.commit()
     results_df.to_sql(OUTPUT_TABLE, engine, if_exists="replace", index=False, method="multi", chunksize=500)
+    _t(f"write {len(results_df):,} explanations to DB", t0)
     print(f"Wrote {len(results_df)} per-record explanations to '{OUTPUT_TABLE}'")
     return results_df
 
 
 def save_summary_plot(shap_values: np.ndarray, sample: pd.DataFrame, feature_names: list):
     print(f"Generating global SHAP summary plot...")
+    t0 = time.time()
     plt.figure(figsize=(8, 5))
     shap.summary_plot(
         shap_values, sample[feature_names], feature_names=feature_names,
@@ -156,6 +183,7 @@ def save_summary_plot(shap_values: np.ndarray, sample: pd.DataFrame, feature_nam
     plt.tight_layout()
     plt.savefig(SUMMARY_PLOT_PATH, dpi=150)
     plt.close()
+    _t("generate + save summary plot", t0)
     print(f"Saved to '{SUMMARY_PLOT_PATH}'")
 
 
@@ -191,6 +219,8 @@ def main():
                          help="Number of flagged anomalies to explain (SHAP on the full flagged set would be slow)")
     args = parser.parse_args()
 
+    run_start = time.time()
+
     print("=" * 65)
     print("STAGE 7 -- SHAP Explainability")
     print("Behavioral Observability Framework for KYC Onboarding")
@@ -213,6 +243,7 @@ def main():
         notes=f"SHAP TreeExplainer, {len(results_df)} flagged anomalies explained",
     )
 
+    print(f"\n[TOTAL RUNTIME] {(time.time() - run_start):.1f}s")
     print("\n[DONE] SHAP explanations complete. "
           f"See '{OUTPUT_TABLE}' table and '{SUMMARY_PLOT_PATH}' for report figures.")
 
