@@ -42,6 +42,21 @@ validate and demo the drift logic before real streaming data exists.
 This fallback is clearly logged -- swap LIVE_TABLE the moment your
 consumer table is live and this code path won't trigger.
 
+--- CHANGE LOG (added to fix a real bug found via integration testing) ---
+Replaced the Unicode flag characters (checkmark/warning-triangle/cross,
+U+2713 / U+26A0 / U+2717) with plain ASCII equivalents ([OK]/[!]/[X]).
+Those characters printed fine in an interactive Windows terminal (which
+uses a Unicode-capable code page), but crashed with a UnicodeEncodeError
+under cp1252 whenever this script's output was captured non-interactively
+-- e.g. by a subprocess pipe, a CI runner, or another script piping this
+one's stdout. Confirmed via a real integration test
+(tests/test_integration_pipeline.py) that ran this script as a
+subprocess and hit exactly this crash, even though the underlying
+PSI/KS computation had already completed successfully. No logic,
+thresholds, or database writes were changed -- only the two print
+statements that used these characters.
+----------------------------------------------------------------------
+
 Requires:
     pip install scipy joblib
 
@@ -85,6 +100,14 @@ N_BINS = 10
 PSI_WARN = 0.10     # 0.10-0.25 -> moderate shift, watch it
 PSI_ALERT = 0.25    # >0.25 -> significant shift, investigate/retrain
 KS_ALPHA = 0.05      # p-value below this -> distributions differ significantly
+
+# ASCII-safe status flags -- see CHANGE LOG above. Plain text, not
+# Unicode symbols, so this script's output can safely be captured by
+# a subprocess pipe / CI runner / another script on any platform or
+# console code page.
+FLAG_OK = "[OK]"
+FLAG_WARNING = "[!]"
+FLAG_ALERT = "[X]"
 
 
 def load_reference(engine) -> pd.DataFrame:
@@ -200,7 +223,7 @@ def run_drift_report(reference: pd.DataFrame, live: pd.DataFrame) -> pd.DataFram
     print("Computing PSI + KS per feature...")
 
     if len(live) < MIN_RELIABLE_SAMPLE:
-        print(f"  \u26a0 WARNING: live sample is only {len(live):,} rows "
+        print(f"  {FLAG_WARNING} WARNING: live sample is only {len(live):,} rows "
               f"(recommended minimum ~{MIN_RELIABLE_SAMPLE:,} for stable PSI/KS). "
               f"Treat any ALERT/WARNING below as a signal to investigate, not a confirmed finding, "
               f"until more live data accumulates.")
@@ -229,7 +252,7 @@ def run_drift_report(reference: pd.DataFrame, live: pd.DataFrame) -> pd.DataFram
             "status": status,
             "sample_size_warning": len(live) < MIN_RELIABLE_SAMPLE,
         })
-        flag = "\u2713" if status == "OK" else ("\u26a0" if status == "WARNING" else "\u2717")
+        flag = FLAG_OK if status == "OK" else (FLAG_WARNING if status == "WARNING" else FLAG_ALERT)
         print(f"  {flag} {col:<28} PSI={psi:.4f}  KS_stat={ks_stat:.4f}  KS_p={ks_p:.6f}  [{status}]")
 
     # Model output score drift -- different column names in each table
@@ -254,7 +277,7 @@ def run_drift_report(reference: pd.DataFrame, live: pd.DataFrame) -> pd.DataFram
                 "status": status,
                 "sample_size_warning": len(live) < MIN_RELIABLE_SAMPLE,
             })
-            flag = "\u2713" if status == "OK" else ("\u26a0" if status == "WARNING" else "\u2717")
+            flag = FLAG_OK if status == "OK" else (FLAG_WARNING if status == "WARNING" else FLAG_ALERT)
             print(f"  {flag} {SCORE_FEATURE_NAME:<28} PSI={psi:.4f}  KS_stat={ks_stat:.4f}  KS_p={ks_p:.6f}  [{status}]")
     else:
         print(f"  (skipping {SCORE_FEATURE_NAME} -- score column missing from reference or live)")

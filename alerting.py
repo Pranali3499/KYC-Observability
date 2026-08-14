@@ -17,6 +17,20 @@ degrades gracefully: it prints what WOULD have been sent instead of
 silently doing nothing or crashing, so the drift pipeline still runs
 end-to-end without a webhook configured.
 
+--- CHANGE LOG (added to fix a real bug found via integration testing) ---
+Replaced the emoji status icons (red circle / yellow circle, U+1F534 /
+U+1F7E1) with plain ASCII equivalents ([ALERT] / [WARN]). Same failure
+mode as the drift_detection.py fix: these characters displayed fine in
+an interactive Windows terminal, but crashed with a UnicodeEncodeError
+under cp1252 the moment this script's print output was captured
+non-interactively (confirmed live via a genuine drift ALERT firing
+during an integration test run -- address_stability_score legitimately
+triggered ALERT status on real accumulated live data, which is exactly
+the code path that hit this crash). No message content, formatting
+logic, or webhook-delivery behavior was changed -- only the two emoji
+characters.
+----------------------------------------------------------------------
+
 Setup (optional):
     Set an environment variable before running drift_detection.py:
         set DRIFT_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/...
@@ -36,6 +50,10 @@ import requests
 WEBHOOK_URL_ENV_VAR = "DRIFT_ALERT_WEBHOOK_URL"
 REQUEST_TIMEOUT_SECONDS = 5
 
+# ASCII-safe status icons -- see CHANGE LOG above.
+ICON_ALERT = "[ALERT]"
+ICON_WARNING = "[WARN]"
+
 
 def build_alert_message(report: pd.DataFrame, live_row_count: int, is_synthetic: bool) -> str:
     """
@@ -52,7 +70,7 @@ def build_alert_message(report: pd.DataFrame, live_row_count: int, is_synthetic:
         f"(live sample: {live_row_count:,} rows{' -- SYNTHETIC DEMO DATA' if is_synthetic else ''})",
     ]
     for _, row in flagged.sort_values("status", ascending=False).iterrows():
-        icon = "🔴" if row["status"] == "ALERT" else "🟡"
+        icon = ICON_ALERT if row["status"] == "ALERT" else ICON_WARNING
         caveat = " _(low confidence -- small sample)_" if row.get("sample_size_warning") else ""
         lines.append(
             f"{icon} `{row['feature']}` -- PSI={row['psi']:.4f}, "
