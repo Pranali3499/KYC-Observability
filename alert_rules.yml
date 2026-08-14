@@ -18,17 +18,18 @@
 # how it was fixed.
 #
 # Latency/error rules (kyc_scoring_latency, kyc_scoring_errors groups)
-# read metrics already exposed by kafka_consumer_etl.py on its
-# /metrics endpoint -- confirmed live earlier (events processed,
-# anomalies flagged, latency histogram, errors). These have NOT been
-# independently confirmed to fire correctly the way the drift rules
-# have -- the metric names (inference_latency_ms_bucket,
-# scoring_errors_total, events_processed_total) are inferred from
-# what kafka_consumer_etl.py is known to expose, not confirmed via a
-# raw read of its /metrics output the way the drift metric names were.
-# If these show unexpectedly as INACTIVE/UNKNOWN even while the
-# consumer is running, check kafka_consumer_etl.py's actual metric
-# names and adjust the expr: lines below to match.
+# read metrics exposed by kafka_consumer_etl.py on its /metrics
+# endpoint. CONFIRMED live via a raw read of
+# http://localhost:8000/metrics while the consumer was running --
+# the real metric names are kyc_events_processed_total,
+# kyc_anomalies_flagged_total, kyc_processing_errors_total (all
+# counters), and kyc_inference_latency_ms (a histogram, so
+# kyc_inference_latency_ms_bucket/_count/_sum). An earlier version of
+# this file guessed at generic names missing the kyc_ prefix every
+# metric in this project actually uses, plus a wrong job label on
+# ConsumerDown (assumed "kafka_consumer_etl", but prometheus.yml's
+# real job name is "kyc-consumer") -- both classes of bug are now
+# fixed and use the confirmed real names throughout.
 #
 # SETUP (three steps):
 #   1. Place this file at the project root, alongside prometheus.yml
@@ -62,10 +63,16 @@ groups:
   - name: kyc_scoring_latency
     rules:
       - alert: HighInferenceLatencyP95
+        # FIX: corrected metric name. The real histogram exposed by
+        # kafka_consumer_etl.py is kyc_inference_latency_ms (confirmed
+        # live via a raw read of http://localhost:8000/metrics) --
+        # the earlier version of this rule queried
+        # inference_latency_ms_bucket, missing the kyc_ prefix every
+        # metric in this project actually uses, so it silently never
+        # matched anything and stayed permanently INACTIVE.
         # Threshold matches this project's own acceptance criterion:
-        # P95 <= 100ms (Section 3.2 of the report). Fires if the
-        # real, measured P95 exceeds that target.
-        expr: histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m])) > 100
+        # P95 <= 100ms (Section 3.2 of the report).
+        expr: histogram_quantile(0.95, rate(kyc_inference_latency_ms_bucket[5m])) > 100
         for: 2m
         labels:
           severity: warning
@@ -74,9 +81,7 @@ groups:
           description: "P95 scoring latency has been above the 100ms acceptance-criteria threshold for over 2 minutes. Live-verified baseline under normal load: ~30-50ms per record."
 
       - alert: HighInferenceLatencyP95_Critical
-        # A harder threshold -- 2x the target -- to distinguish a
-        # borderline slowdown from a serious one.
-        expr: histogram_quantile(0.95, rate(inference_latency_ms_bucket[5m])) > 200
+        expr: histogram_quantile(0.95, rate(kyc_inference_latency_ms_bucket[5m])) > 200
         for: 1m
         labels:
           severity: critical
@@ -87,9 +92,12 @@ groups:
   - name: kyc_scoring_errors
     rules:
       - alert: HighErrorRate
-        # Y% threshold: 5% of scored events erroring is treated as
-        # the warning line. Adjust to your operational tolerance.
-        expr: (rate(scoring_errors_total[5m]) / rate(events_processed_total[5m])) > 0.05
+        # FIX: corrected metric names to the real, confirmed ones --
+        # kyc_processing_errors_total and kyc_events_processed_total
+        # (both counters, confirmed live). Earlier version used
+        # scoring_errors_total / events_processed_total, missing the
+        # kyc_ prefix, same class of bug as HighInferenceLatencyP95.
+        expr: (rate(kyc_processing_errors_total[5m]) / rate(kyc_events_processed_total[5m])) > 0.05
         for: 2m
         labels:
           severity: warning
@@ -98,12 +106,13 @@ groups:
           description: "More than 5% of onboarding events are failing to score successfully over the last 5 minutes. Live-verified baseline: 0 errors across a 200-event test run."
 
       - alert: ConsumerDown
-        # This directly reflects a real behavior you saw live tonight:
-        # the /metrics endpoint (and therefore this target) only
-        # exists while kafka_consumer_etl.py is actively running.
-        # This alert fires when the consumer has been unreachable
-        # for longer than a normal idle gap between demo/batch runs.
-        expr: up{job="kafka_consumer_etl"} == 0
+        # FIX: corrected job label. prometheus.yml's actual scrape
+        # job for this target is named "kyc-consumer" (confirmed by
+        # reading prometheus.yml directly), not "kafka_consumer_etl"
+        # as the earlier version of this rule assumed -- Prometheus's
+        # `up` metric is labeled by the job name in prometheus.yml,
+        # not by the Python script's filename.
+        expr: up{job="kyc-consumer"} == 0
         for: 10m
         labels:
           severity: warning
