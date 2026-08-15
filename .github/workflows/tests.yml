@@ -1,0 +1,112 @@
+name: CI - Unit + Regression Test Suite
+
+# Runs automatically on every push and every pull request against
+# master. This is a genuine Continuous Integration gate: it does not
+# need a live Postgres/Kafka/Docker stack, because this project's
+# pytest suite (37 unit tests, across test_feature_engineering.py,
+# test_drift_detection.py, test_counterfactual_analysis.py,
+# test_kafka_consumer_etl.py, test_alerting.py) exercises the
+# underlying logic against synthetic, in-memory inputs -- not the
+# real database. That is precisely what makes it fast and safe to
+# run in a hosted CI runner with no project infrastructure attached.
+#
+# test_regression_baseline.py is ALSO safe to run here for the same
+# reason: it checks frozen config values (feature list, drift
+# thresholds) with no database dependency, and the parts that inspect
+# isolation_forest_tuned.pkl skip gracefully if that file isn't
+# present/committed on this checkout rather than failing the build.
+#
+# test_integration_pipeline.py is DELIBERATELY NOT run here -- it
+# needs a live Postgres/Kafka connection (docker compose up -d),
+# which this hosted runner does not have. Those tests self-skip with
+# a clear reason when run in an environment like this one; they're
+# meant to be run locally, not as part of this CI job.
+#
+# Scope note (documented deliberately, not hidden): this workflow
+# covers Continuous Integration -- automated test verification on
+# every change. It does NOT cover Continuous Deployment (automated
+# build/push/deploy to a live environment) or Kubernetes
+# orchestration. Both are explicitly named as future work in the
+# dissertation (Section 7.5) given the project's PoC scope and
+# timeline -- this workflow is the CI half of "CI/CD", added as a
+# real, running gate rather than left as a plan on paper.
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+  workflow_dispatch:   # lets you trigger a run manually from the Actions tab
+
+jobs:
+  unit-tests:
+    name: Run unit test suite (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit test suite
+        run: |
+          pytest tests/ -v --ignore=tests/test_integration_pipeline.py --junitxml=pytest-unit-report.xml
+
+      - name: Upload unit test report as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-unit-report
+          path: pytest-unit-report.xml
+
+  regression-tests:
+    name: Run regression baseline suite (pytest)
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run regression baseline suite
+        run: |
+          pytest tests/test_regression_baseline.py -v --junitxml=pytest-regression-report.xml
+
+      - name: Upload regression test report as a build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-regression-report
+          path: pytest-regression-report.xml
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Test run summary" >> $GITHUB_STEP_SUMMARY
+          echo "Unit tests (37): feature engineering, drift PSI/KS logic," >> $GITHUB_STEP_SUMMARY
+          echo "counterfactual analysis, real-time feature engineering, and" >> $GITHUB_STEP_SUMMARY
+          echo "drift-alert message formatting." >> $GITHUB_STEP_SUMMARY
+          echo "Regression tests: frozen feature list, drift thresholds, and" >> $GITHUB_STEP_SUMMARY
+          echo "tuned model hyperparameter ranges (skips gracefully if the" >> $GITHUB_STEP_SUMMARY
+          echo "model .pkl isn't present on this checkout)." >> $GITHUB_STEP_SUMMARY
