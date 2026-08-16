@@ -26,3 +26,5 @@ shap>=0.45
 pytest 
 mlflow 
 optuna 
+scikit-image
+pyarrow
