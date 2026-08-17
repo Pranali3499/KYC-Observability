@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KYCOnboardingEvent",
+  "description": "Schema contract for real-time KYC onboarding behavioral events",
+  "type": "object",
+  "properties": {
+    "row_id": { "type": ["integer", "null"] },
+    "velocity_6h": { "type": "number", "minimum": 0.0 },
+    "velocity_24h": { "type": "number", "minimum": 0.0 },
+    "velocity_4w": { "type": "number", "minimum": 0.0 },
+    "device_distinct_emails_8w": { "type": "number" },
+    "device_fraud_count": { "type": "number", "minimum": 0.0 },
+    "current_address_months_count": { "type": "number" },
+    "name_email_similarity": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "phone_home_valid": { "type": ["integer", "number"], "enum": [0, 1, 0.0, 1.0] },
+    "phone_mobile_valid": { "type": ["integer", "number"], "enum": [0, 1, 0.0, 1.0] },
+    "foreign_request": { "type": ["integer", "number"], "enum": [0, 1, 0.0, 1.0] },
+    "source": { "type": ["string", "null"] },
+    "income": { "type": "number", "minimum": 0.0 },
+    "credit_risk_score": { "type": "number" },
+    "proposed_credit_limit": { "type": "number", "minimum": 0.0 },
+    "fraud_bool": { "type": ["integer", "null"], "enum": [0, 1, null] }
+  },
+  "required": [
+    "velocity_6h",
+    "velocity_24h",
+    "velocity_4w",
+    "device_distinct_emails_8w",
+    "device_fraud_count",
+    "name_email_similarity"
+  ],
+  "additionalProperties": true
+}

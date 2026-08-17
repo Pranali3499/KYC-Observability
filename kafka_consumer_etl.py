@@ -77,6 +77,16 @@ INFERENCE_LATENCY = Histogram(
     "Per-event feature engineering + model scoring latency, in milliseconds",
     buckets=(5, 10, 20, 30, 50, 75, 100, 200, 500, 1000),
 )
+FEATURE_STORE_WRITE_LATENCY = Histogram(
+    "kyc_feature_store_write_latency_ms",
+    "Latency of persisting scored record to PostgreSQL feature store, in milliseconds",
+    buckets=(1, 5, 10, 20, 50, 100, 200, 500),
+)
+FEATURE_STORE_READ_LATENCY = Histogram(
+    "kyc_feature_store_read_latency_ms",
+    "Latency of querying reference ranges from PostgreSQL feature store, in milliseconds",
+    buckets=(5, 10, 20, 50, 100, 200, 500, 1000),
+)
 
 CREATE_OUTPUT_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS {OUTPUT_TABLE} (
@@ -221,6 +231,7 @@ def engineer_features_single(event: dict, ranges: dict) -> dict:
 
 def write_score(engine, row_id, features: dict, anomaly_score: float,
                  is_anomaly: bool, fraud_bool, latency_ms: float):
+    start_fs = time.perf_counter()
     with engine.connect() as conn:
         conn.execute(
             text(
@@ -247,6 +258,7 @@ def write_score(engine, row_id, features: dict, anomaly_score: float,
             },
         )
         conn.commit()
+    FEATURE_STORE_WRITE_LATENCY.observe((time.perf_counter() - start_fs) * 1000)
 
 
 def main():

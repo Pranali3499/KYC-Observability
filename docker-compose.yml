@@ -99,6 +99,14 @@ services:
     depends_on:
       - prometheus
 
+  # Node & container resource metrics exporter for Kubernetes / container monitoring
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: kyc-node-exporter
+    restart: always
+    ports:
+      - "9100:9100"
+
 volumes:
   kyc_pgdata:
   kyc_kafka_data:

@@ -18,9 +18,17 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:8000"]
 
+  - job_name: "kyc-api"
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+
   - job_name: "drift-metrics"
     static_configs:
       - targets: ["host.docker.internal:8002"]
+
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100", "host.docker.internal:9100"]
 
   - job_name: "prometheus"
     static_configs:

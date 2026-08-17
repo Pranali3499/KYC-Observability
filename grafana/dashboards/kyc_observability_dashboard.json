@@ -1,9 +1,9 @@
 {
-  "title": "KYC Behavioral Observability - Real-Time Pipeline",
+  "title": "KYC Behavioral Observability - Full Stack Monitoring",
   "uid": "kyc-observability-main",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": { "from": "now-1h", "to": "now" },
   "panels": [
@@ -104,13 +104,51 @@
     },
     {
       "id": 8,
-      "title": "Latency Distribution (heatmap)",
-      "type": "heatmap",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "title": "Feature & Model Output Drift (PSI)",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
       "targets": [
-        { "expr": "sum(increase(kyc_inference_latency_ms_bucket[5m])) by (le)", "format": "heatmap", "legendFormat": "{{le}}", "refId": "A" }
-      ]
+        { "expr": "kyc_feature_psi", "legendFormat": "{{feature}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 0.5,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.1 },
+              { "color": "red", "value": 0.25 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Feature Store Operations Latency (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(kyc_feature_store_write_latency_ms_bucket) by (le))", "legendFormat": "Feature Store Write P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(kyc_api_inference_latency_ms_bucket) by (le))", "legendFormat": "FastAPI Scoring P95", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 10,
+      "title": "Node / Container CPU & Memory Utilization",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "kyc-prometheus" },
+      "targets": [
+        { "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)", "legendFormat": "Node CPU Usage (%)", "refId": "A" },
+        { "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100", "legendFormat": "Node Memory Usage (%)", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
     }
   ]
 }

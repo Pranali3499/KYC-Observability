@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KYCBiometricEvent",
+  "description": "Schema contract for real-time KYC biometric verification events",
+  "type": "object",
+  "properties": {
+    "event_id": { "type": "string" },
+    "applicant_id": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "face_match_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "liveness_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "ocr_confidence_score": { "type": "number", "minimum": 0.0, "maximum": 100.0 },
+    "name_similarity": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+    "document_type": { "type": "string", "enum": ["PASSPORT", "DRIVING_LICENSE", "NATIONAL_ID", "SYNTHETIC_ID"] },
+    "device_hash": { "type": "string" },
+    "is_spoof_suspected": { "type": "boolean" },
+    "biometric_outcome": { "type": "string", "enum": ["PASS", "FAIL", "MANUAL_REVIEW"] }
+  },
+  "required": [
+    "applicant_id",
+    "face_match_score",
+    "liveness_score",
+    "ocr_confidence_score",
+    "name_similarity"
+  ],
+  "additionalProperties": true
+}

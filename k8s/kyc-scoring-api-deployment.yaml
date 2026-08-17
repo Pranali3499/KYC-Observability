@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyc-scoring-api
+  namespace: kyc-production
+  labels:
+    app: kyc-scoring-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kyc-scoring-api
+  template:
+    metadata:
+      labels:
+        app: kyc-scoring-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8001"
+    spec:
+      containers:
+        - name: kyc-api
+          image: kyc-observability/api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+              name: http
+          env:
+            - name: KYC_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kyc-db-secrets
+                  key: database-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kyc-scoring-api
+  namespace: kyc-production
+  labels:
+    app: kyc-scoring-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: 8001
+      name: http
+  selector:
+    app: kyc-scoring-api

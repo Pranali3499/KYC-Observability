@@ -1,0 +1,7 @@
+Dataset,Rows Evaluated,Fraud Count,Fraud Rate (%),ROC-AUC,Detection Rate @ 5% (%),FPR (%),Model Output PSI
+Base (Reference),50000,573,1.146,0.5486,9.95,4.94,0.0
+Variant I,50000,541,1.082,0.5318,7.02,4.98,0.0013
+Variant II,50000,584,1.168,0.5862,11.3,4.93,0.0065
+Variant III,50000,588,1.176,0.5592,7.99,4.96,0.0103
+Variant IV,50000,595,1.19,0.5956,9.75,4.94,0.0126
+Variant V,50000,590,1.18,0.5479,8.31,4.96,0.0169
