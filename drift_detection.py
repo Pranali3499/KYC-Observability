@@ -110,9 +110,17 @@ FLAG_WARNING = "[!]"
 FLAG_ALERT = "[X]"
 
 
-def load_reference(engine) -> pd.DataFrame:
-    print(f"Reading reference distribution from '{REFERENCE_TABLE}' ...")
-    df = pd.read_sql(f"SELECT * FROM {REFERENCE_TABLE}", engine)
+import argparse
+import os
+
+
+def load_reference(engine, sample_size: int = None) -> pd.DataFrame:
+    if sample_size and sample_size > 0:
+        print(f"Reading reference distribution from '{REFERENCE_TABLE}' (sample_size={sample_size:,}) ...")
+        df = pd.read_sql(f"SELECT * FROM {REFERENCE_TABLE} LIMIT {sample_size}", engine)
+    else:
+        print(f"Reading reference distribution from '{REFERENCE_TABLE}' ...")
+        df = pd.read_sql(f"SELECT * FROM {REFERENCE_TABLE}", engine)
     print(f"Loaded {len(df):,} reference rows")
     return df
 
@@ -295,12 +303,23 @@ def write_report(report: pd.DataFrame, engine, is_synthetic: bool):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Stage 6: Drift Detection (PSI / KS)")
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=int(os.getenv("DRIFT_SAMPLE_SIZE", "50000")),
+        help="Number of reference rows to load and score (default: 50000, 0 for all)",
+    )
+    args = parser.parse_args()
+
     print("=" * 65)
     print("STAGE 6 -- Drift Detection (PSI / KS)")
+    print("Behavioral Observability Framework for KYC Onboarding")
     print("=" * 65)
 
     engine = get_engine()
-    reference = load_reference(engine)
+    sample_size = args.sample_size if args.sample_size > 0 else None
+    reference = load_reference(engine, sample_size=sample_size)
     reference = score_reference_with_tuned_model(reference)
     live, is_synthetic = load_live(engine, reference)
 

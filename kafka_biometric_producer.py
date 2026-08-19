@@ -27,8 +27,10 @@ from datetime import datetime, timezone
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
+import os
+
 TOPIC_NAME = "kyc-biometric-events"
-DEFAULT_BOOTSTRAP = "localhost:9092"
+DEFAULT_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 # 7-day retention policy + 1GB segment configuration per evaluator feedback
 TOPIC_CONFIGS = {

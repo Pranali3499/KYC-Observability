@@ -45,9 +45,11 @@ from sqlalchemy import text
 from db_config import get_engine
 from provenance import log_provenance
 
+import os
+
 TOPIC_NAME = "kyc-onboarding-events"
 CONSUMER_GROUP = "kyc-etl-consumer-group"
-DEFAULT_BOOTSTRAP = "localhost:9092"
+DEFAULT_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 DEFAULT_METRICS_PORT = 8000
 
 TUNED_MODEL_PATH = "isolation_forest_tuned.pkl"

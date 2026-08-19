@@ -30,7 +30,7 @@ from db_config import get_engine
 
 TOPIC_NAME = "kyc-biometric-events"
 CONSUMER_GROUP = "kyc-biometric-consumer-group"
-DEFAULT_BOOTSTRAP = "localhost:9092"
+DEFAULT_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 DEFAULT_METRICS_PORT = 8003
 OUTPUT_TABLE = "biometric_real_time_scores"
 SCHEMA_PATH = os.path.join("schemas", "biometric_event_schema.json")

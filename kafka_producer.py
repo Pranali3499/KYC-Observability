@@ -30,10 +30,12 @@ from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from sqlalchemy import create_engine
 
+import os
+
 TOPIC_NAME = "kyc-onboarding-events"
 SOURCE_TABLE = "kyc_transactions"
-DEFAULT_BOOTSTRAP = "localhost:9092"
-DEFAULT_DB_URL = "postgresql://kyc_user:kyc_pass@localhost:5432/kyc_db"
+DEFAULT_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+DEFAULT_DB_URL = os.getenv("KYC_DB_URL", "postgresql://kyc_user:kyc_pass@localhost:5432/kyc_db")
 
 
 def ensure_topic_exists(bootstrap_servers: str, topic: str, num_partitions: int = 3):

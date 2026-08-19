@@ -33,11 +33,15 @@ pipeline {
     }
 
     environment {
-        PYTHONUNBUFFERED = '1'
-        PROJECT_DIR      = "${WORKSPACE}"
-        REPORTS_DIR      = "${WORKSPACE}/test-reports"
-        ARTIFACTS_DIR    = "${WORKSPACE}/pipeline-artifacts"
-        KYC_DB_HOST      = "kyc-postgres"
+        PYTHONUNBUFFERED        = '1'
+        OMP_NUM_THREADS         = '1'
+        OPENBLAS_NUM_THREADS    = '1'
+        MKL_NUM_THREADS         = '1'
+        LOKY_MAX_CPU_COUNT      = '2'
+        PROJECT_DIR             = "${WORKSPACE}"
+        REPORTS_DIR             = "${WORKSPACE}/test-reports"
+        ARTIFACTS_DIR           = "${WORKSPACE}/pipeline-artifacts"
+        KYC_DB_HOST             = "kyc-postgres"
         KAFKA_BOOTSTRAP_SERVERS = "kyc-kafka:29092"
     }
 
@@ -277,11 +281,12 @@ pipeline {
                 echo '>>> STAGE 8: DRIFT DETECTION, RETRAINING & CANARY ROLLOUT <<<'
                 echo '=================================================================='
                 script {
+                    def driftSampleSize = (params.PIPELINE_MODE == 'FAST_DEMO') ? '25000' : '50000'
                     if (isUnix()) {
-                        sh '''
-                            python drift_detection.py
+                        sh """
+                            python drift_detection.py --sample-size ${driftSampleSize}
                             python drift_metrics_exporter.py --once
-                        '''
+                        """
                         if (params.SIMULATE_DRIFT_AND_RETRAIN) {
                             sh 'python retraining_pipeline.py --simulate-drift'
                         }
@@ -289,10 +294,10 @@ pipeline {
                             sh 'python canary_rollout_simulator.py'
                         }
                     } else {
-                        bat '''
-                            python drift_detection.py
+                        bat """
+                            python drift_detection.py --sample-size ${driftSampleSize}
                             python drift_metrics_exporter.py --once
-                        '''
+                        """
                         if (params.SIMULATE_DRIFT_AND_RETRAIN) {
                             bat 'python retraining_pipeline.py --simulate-drift'
                         }
