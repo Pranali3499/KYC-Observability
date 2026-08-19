@@ -42,6 +42,7 @@ pipeline {
         REPORTS_DIR             = "${WORKSPACE}/test-reports"
         ARTIFACTS_DIR           = "${WORKSPACE}/pipeline-artifacts"
         KYC_DB_HOST             = "kyc-postgres"
+        KYC_DB_URL              = "postgresql://kyc_user:kyc_pass@kyc-postgres:5432/kyc_db"
         KAFKA_BOOTSTRAP_SERVERS = "kyc-kafka:29092"
     }
 

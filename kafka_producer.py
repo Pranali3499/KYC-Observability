@@ -26,16 +26,15 @@ import json
 import time
 
 import pandas as pd
+import os
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from sqlalchemy import create_engine
-
-import os
+from db_config import get_engine
 
 TOPIC_NAME = "kyc-onboarding-events"
 SOURCE_TABLE = "kyc_transactions"
 DEFAULT_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-DEFAULT_DB_URL = os.getenv("KYC_DB_URL", "postgresql://kyc_user:kyc_pass@localhost:5432/kyc_db")
 
 
 def ensure_topic_exists(bootstrap_servers: str, topic: str, num_partitions: int = 3):
@@ -55,9 +54,12 @@ def ensure_topic_exists(bootstrap_servers: str, topic: str, num_partitions: int 
             print(f"Topic creation for '{t}' failed (may already exist): {e}")
 
 
-def load_sample_events(db_url: str, n_events: int) -> list[dict]:
+def load_sample_events(n_events: int, db_url: str = None) -> list[dict]:
     print(f"Sampling {n_events} rows from '{SOURCE_TABLE}' to simulate as live events...")
-    engine = create_engine(db_url)
+    if db_url:
+        engine = create_engine(db_url)
+    else:
+        engine = get_engine()
     # random sample, not the first N rows -- more representative of a
     # real stream than always replaying the same head of the table
     df = pd.read_sql(
@@ -77,7 +79,7 @@ def main():
     parser.add_argument("--n-events", type=int, default=100, help="Number of events to publish")
     parser.add_argument("--delay", type=float, default=0.5, help="Seconds to wait between events (0 = as fast as possible)")
     parser.add_argument("--bootstrap-servers", default=DEFAULT_BOOTSTRAP)
-    parser.add_argument("--db-url", default=DEFAULT_DB_URL)
+    parser.add_argument("--db-url", default=None, help="Optional DB URL (defaults to db_config settings)")
     args = parser.parse_args()
 
     print("=" * 65)
@@ -87,7 +89,7 @@ def main():
 
     ensure_topic_exists(args.bootstrap_servers, TOPIC_NAME)
 
-    events = load_sample_events(args.db_url, args.n_events)
+    events = load_sample_events(args.n_events, args.db_url)
 
     producer = Producer({"bootstrap.servers": args.bootstrap_servers})
 
