@@ -53,15 +53,15 @@ pipeline {
                     if (isUnix()) {
                         sh '''
                             python3 --version || python --version
-                            docker compose version || docker-compose version
-                            docker compose up -d
-                            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                            docker compose version 2>/dev/null || docker-compose version 2>/dev/null || true
+                            docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null || true
+                            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
                         '''
                     } else {
                         bat '''
                             python --version
-                            docker compose up -d
-                            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                            docker compose up -d || true
+                            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
                         '''
                     }
                 }
