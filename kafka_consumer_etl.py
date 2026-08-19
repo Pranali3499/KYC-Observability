@@ -390,10 +390,8 @@ def main():
     print(f"Results written to: '{OUTPUT_TABLE}' table")
     print("=" * 65)
 
-    if args.max_messages:
-        print(f"\nMetrics still available at http://localhost:{args.metrics_port}/metrics "
-              f"for 15 seconds before exit -- check now if you want to see them.")
-        time.sleep(15)
+    if args.max_messages and not getattr(args, 'no_sleep', False):
+        print(f"\nMetrics available at http://localhost:{args.metrics_port}/metrics -- continuing...")
 
 
 if __name__ == "__main__":

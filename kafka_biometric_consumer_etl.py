@@ -218,6 +218,8 @@ def main():
     finally:
         consumer.close()
         print(f"[DONE] Biometric consumer completed. Total processed: {processed}")
+        if args.max_messages and processed > 0:
+            print(f"Metrics server active at http://localhost:{args.metrics_port}/metrics.")
 
 
 if __name__ == "__main__":
