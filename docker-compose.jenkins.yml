@@ -1,0 +1,37 @@
+# ==============================================================================
+# docker-compose.jenkins.yml -- Local Jenkins Server for Pipeline Demonstration
+# KYC Behavioral Observability Framework
+# Student: Pranali Pandharinath Supekar (2024DA04387) | M.Tech DSE, BITS Pilani
+# ==============================================================================
+#
+# Quickstart:
+#   1. Start Jenkins:
+#        docker compose -f docker-compose.jenkins.yml up -d
+#   2. Retrieve Initial Admin Password:
+#        docker exec -it kyc-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+#   3. Open Jenkins in Browser:
+#        http://localhost:8088
+#   4. Create a Pipeline Job -> Select 'Pipeline script from SCM' -> Git (or path) -> Point to Jenkinsfile
+# ==============================================================================
+
+services:
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: kyc-jenkins
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8088:8080"
+      - "50000:50000"
+    volumes:
+      - kyc_jenkins_data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace/kyc-observability
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    labels:
+      - "description=KYC Observability Jenkins Master Controller"
+
+volumes:
+  kyc_jenkins_data:

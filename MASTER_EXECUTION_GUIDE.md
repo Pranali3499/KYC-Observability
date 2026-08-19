@@ -6,6 +6,29 @@ This document provides the single, sequential master guide to execute the entire
 
 ---
 
+## ⚡ 1-Click Single-Trigger Execution (Recommended)
+
+To run all 9 stages in sequential order with a single trigger:
+
+```cmd
+# Windows 1-Click Master Runner (Full 1M rows pipeline):
+run_pipeline.bat
+
+# Windows Fast Demo Runner (~2 minutes for viva presentation):
+run_pipeline.bat fast
+
+# Linux / Unix / macOS:
+./run_pipeline.sh fast
+
+# Python Direct Orchestrator:
+python run_all_pipeline.py --mode fast
+```
+
+### 🚢 Enterprise Jenkins CI/CD Pipeline (`Jenkinsfile`)
+For automated CI/CD and Continuous Training (CT), the repository includes a Declarative [Jenkinsfile](file:///d:/kyc-observability/Jenkinsfile). See the full guide at [JENKINS_PIPELINE_GUIDE.md](file:///d:/kyc-observability/JENKINS_PIPELINE_GUIDE.md).
+
+---
+
 ## 🛠️ Prerequisites & Infrastructure
 
 Before running the Python scripts, ensure Docker Desktop is running and start the infrastructure containers:
