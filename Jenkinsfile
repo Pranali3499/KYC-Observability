@@ -37,6 +37,8 @@ pipeline {
         PROJECT_DIR      = "${WORKSPACE}"
         REPORTS_DIR      = "${WORKSPACE}/test-reports"
         ARTIFACTS_DIR    = "${WORKSPACE}/pipeline-artifacts"
+        KYC_DB_HOST      = "kyc-postgres"
+        KAFKA_BOOTSTRAP_SERVERS = "kyc-kafka:29092"
     }
 
     stages {
@@ -54,8 +56,15 @@ pipeline {
                         sh '''
                             python3 --version || python --version
                             docker compose version 2>/dev/null || docker-compose version 2>/dev/null || true
-                            docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null || true
                             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" || true
+                            
+                            # Symlink dataset & model artifacts from mounted host directory if available
+                            if [ -d "/workspace/kyc-observability" ]; then
+                                ln -sf /workspace/kyc-observability/*.csv . 2>/dev/null || true
+                                ln -sf /workspace/kyc-observability/*.pkl . 2>/dev/null || true
+                                ln -sf /workspace/kyc-observability/synthetic_id_documents . 2>/dev/null || true
+                                ln -sf /workspace/kyc-observability/biometric_parquet . 2>/dev/null || true
+                            fi
                         '''
                     } else {
                         bat '''
