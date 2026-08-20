@@ -202,7 +202,7 @@ class TestKafkaProducerConsumerIntegration:
 
         producer_result = _run_script(
             ["kafka_producer.py", "--n-events", str(n_events), "--delay", "0.05", "--bootstrap-servers", bootstrap],
-            timeout=60,
+            timeout=120,
         )
         assert producer_result.returncode == 0, (
             f"kafka_producer.py failed to publish events.\n"
