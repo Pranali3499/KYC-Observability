@@ -88,7 +88,8 @@ def load_data_and_model(engine, n_samples: int):
     model = load_model()
 
     print(f"Loading '{SOURCE_TABLE}' and identifying flagged anomalies...")
-    df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE}", engine)
+    limit_clause = f"LIMIT {max(n_samples * 50, 25000)}" if (n_samples and n_samples < 50000) else ""
+    df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE} {limit_clause}", engine)
 
     X_full = df[FEATURE_COLUMNS]
     predictions = model.predict(X_full)
@@ -102,9 +103,13 @@ def load_data_and_model(engine, n_samples: int):
 
     anomalies = df[df["is_anomaly"]]
     print(f"Total flagged anomalies in dataset: {len(anomalies):,}")
-    sample_size = min(n_samples, len(anomalies))
-    sample = anomalies.sample(n=sample_size, random_state=42)
-    print(f"Analyzing counterfactuals for a sample of {sample_size:,} flagged anomalies")
+    if n_samples is None or n_samples in (0, len(anomalies)):
+        sample = anomalies
+        print(f"Analyzing counterfactuals for ALL {len(anomalies):,} flagged anomalies across dataset")
+    else:
+        sample_size = min(n_samples, len(anomalies))
+        sample = anomalies.sample(n=sample_size, random_state=42)
+        print(f"Analyzing counterfactuals for a sample of {sample_size:,} flagged anomalies")
 
     return model, sample, normal_median
 
@@ -308,9 +313,8 @@ def summarize_single_feature_achievability(results_df: pd.DataFrame):
 
 def main():
     parser = argparse.ArgumentParser(description="Stage 4: Counterfactual analysis")
-    parser.add_argument("--n-samples", type=int, default=100,
-                         help="Number of flagged anomalies to analyze (each record costs "
-                              "up to 6*SCAN_STEPS + SCAN_STEPS model calls, so keep this modest)")
+    parser.add_argument("--n-samples", type=int, default=None,
+                         help="Number of flagged anomalies to analyze (default: None for all flagged anomalies)")
     args = parser.parse_args()
 
     print("=" * 65)

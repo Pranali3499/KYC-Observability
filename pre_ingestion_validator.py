@@ -176,8 +176,8 @@ def run_validation(csv_path: str, sample_size: int = None, output_clean: str = N
 
 def main():
     parser = argparse.ArgumentParser(description="Pre-ingestion data quality and deduplication validation pipeline")
-    parser.add_argument("--csv", default="ci_test_data.csv", help="CSV dataset to validate")
-    parser.add_argument("--sample-size", type=int, default=None, help="Optional sample size limit")
+    parser.add_argument("--csv", default="Base.csv", help="CSV dataset to validate (default: Base.csv)")
+    parser.add_argument("--sample-size", type=int, default=None, help="Optional sample size limit (default: None for full 1M dataset)")
     parser.add_argument("--output-clean", default=None, help="Optional output path for validated deduplicated data")
     args = parser.parse_args()
 

@@ -90,7 +90,7 @@ def synthesize_biometric_features(df: pd.DataFrame, fraud_col: str = "fraud_bool
         print(f"  liveness_score        mean(legit)={liveness[legit_idx].mean():.3f}  mean(fraud)={liveness[fraud_idx].mean():.3f}")
         print(f"  face_match_score      mean(legit)={face_match[legit_idx].mean():.3f}  mean(fraud)={face_match[fraud_idx].mean():.3f}")
         print(f"  ocr_confidence_score  mean(legit)={ocr_conf[legit_idx].mean():.3f}  mean(fraud)={ocr_conf[fraud_idx].mean():.3f}")
-    print("  \u2713 biometric_risk_score (composite)")
+    print("  [OK] biometric_risk_score (composite)")
 
     return out
 

@@ -112,3 +112,7 @@ volumes:
   kyc_kafka_data:
   kyc_prometheus_data:
   kyc_grafana_data:
+
+networks:
+  default:
+    name: kyc_network

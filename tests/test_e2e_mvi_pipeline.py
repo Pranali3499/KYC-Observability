@@ -153,7 +153,7 @@ def test_model_scoring_and_latency(synthetic_onboarding_batch):
     latencies = []
     for i in range(len(X)):
         t0 = time.perf_counter()
-        _ = -model.decision_function(X.iloc[[i]])[0]
+        _ = -model.decision_function(X.iloc[i : i + 1])[0]
         latencies.append((time.perf_counter() - t0) * 1000)
 
     p95_lat = np.percentile(latencies, 95)

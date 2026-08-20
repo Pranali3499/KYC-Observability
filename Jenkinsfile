@@ -44,6 +44,7 @@ pipeline {
         KYC_DB_HOST             = "kyc-postgres"
         KYC_DB_URL              = "postgresql://kyc_user:kyc_pass@kyc-postgres:5432/kyc_db"
         KAFKA_BOOTSTRAP_SERVERS = "kyc-kafka:29092"
+        PATH                    = "/opt/venv/bin:${env.PATH}"
     }
 
     stages {
@@ -137,16 +138,17 @@ pipeline {
                 echo '>>> STAGE 3: BEHAVIORAL FEATURE ENGINEERING & DATA QUALITY <<<'
                 echo '=================================================================='
                 script {
+                    def featSampleArg = (params.PIPELINE_MODE == 'FAST_DEMO') ? '--sample-size 25000' : ''
                     if (isUnix()) {
-                        sh '''
-                            python feature_engineering.py
+                        sh """
+                            python feature_engineering.py ${featSampleArg}
                             python data_quality_checks.py
-                        '''
+                        """
                     } else {
-                        bat '''
-                            python feature_engineering.py
+                        bat """
+                            python feature_engineering.py ${featSampleArg}
                             python data_quality_checks.py
-                        '''
+                        """
                     }
                 }
             }

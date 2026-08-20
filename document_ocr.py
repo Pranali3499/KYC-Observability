@@ -133,8 +133,13 @@ def main():
                               r'(only needed if Tesseract is not on your system PATH)')
     args = parser.parse_args()
 
+    # Auto-detect standard Windows Tesseract path if not explicitly provided
     if args.tesseract_path:
         pytesseract.pytesseract.tesseract_cmd = args.tesseract_path
+    elif os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    elif os.path.exists(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"):
+        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
 
     print("=" * 65)
     print("LAYER 5 -- Document OCR Validation (Tesseract)")

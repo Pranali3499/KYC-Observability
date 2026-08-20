@@ -16,7 +16,10 @@
 
 services:
   jenkins:
-    image: jenkins/jenkins:lts-jdk17
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    image: kyc-jenkins:custom
     container_name: kyc-jenkins
     restart: unless-stopped
     user: root
@@ -35,3 +38,7 @@ services:
 
 volumes:
   kyc_jenkins_data:
+
+networks:
+  default:
+    name: kyc_network

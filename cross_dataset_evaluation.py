@@ -262,12 +262,12 @@ def evaluate_dataset(name: str, file_path: str, model, sample_size: int = None, 
 
 def main():
     parser = argparse.ArgumentParser(description="Cross-dataset evaluation of KYC Isolation Forest model")
-    parser.add_argument("--sample-size", type=int, default=50000,
-                        help="Sample size per variant (default 50,000 for fast reproducible evaluation, 0 for full)")
+    parser.add_argument("--sample-size", type=int, default=None,
+                        help="Sample size per variant (default: None for full 1M datasets, or pass integer for subsample)")
     parser.add_argument("--full", action="store_true", help="Evaluate full datasets without sampling")
     args = parser.parse_args()
 
-    sample_size = None if args.full or args.sample_size == 0 else args.sample_size
+    sample_size = None if (args.full or args.sample_size in (0, None)) else args.sample_size
 
     print("=" * 70)
     print("CROSS-DATASET GENERALIZATION & SHIFT EVALUATION")
