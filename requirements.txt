@@ -28,3 +28,4 @@ mlflow
 optuna 
 scikit-image
 pyarrow
+pytesseract

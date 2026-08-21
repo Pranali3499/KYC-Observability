@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     docker.io \
+    tesseract-ocr \
+    libtesseract-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-create virtual environment and install project dependencies
