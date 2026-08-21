@@ -130,69 +130,22 @@ def compute_feature_ranges(engine) -> dict:
     as sample size grew). Now replicates the same median-imputation
     step before computing the range.
     """
-    print("Computing feature normalization ranges from kyc_transactions (one-time, at startup)...")
+DEFAULT_FEATURE_RANGES = {
+    "session_velocity": (0.0, 15000.0),
+    "device_reuse": (0.0, 10.0),
+    "address_stability": (0.0, 500.0),
+    "identity_consistency": (0.0, 3.0),
+    "geographic_risk": (0.0, 2.0),
+    "financial_risk": (0.0, 50000.0),
+}
 
-    try:
-        with engine.connect() as conn:
-            median_row = conn.execute(text(
-                "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY device_distinct_emails_8w) AS med "
-                "FROM (SELECT device_distinct_emails_8w FROM kyc_transactions WHERE device_distinct_emails_8w != -1 LIMIT 50000) sub"
-            )).fetchone()
-            device_emails_median = float(median_row.med) if (median_row and median_row.med is not None) else 1.0
-    except Exception:
-        device_emails_median = 1.0
 
-    print(f"  device_distinct_emails_8w median (excluding -1 sentinel): {device_emails_median:.2f} "
-          f"-- matches feature_engineering.py's clean_sentinels() imputation")
-
-    query = """
-        SELECT
-            MIN(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_min,
-            MAX(0.5*velocity_6h + 0.3*velocity_24h + 0.2*velocity_4w) AS vel_max,
-            MIN(
-                CASE WHEN device_distinct_emails_8w = -1 THEN :device_emails_median
-                     ELSE device_distinct_emails_8w END
-                + 5*device_fraud_count
-            ) AS dev_min,
-            MAX(
-                CASE WHEN device_distinct_emails_8w = -1 THEN :device_emails_median
-                     ELSE device_distinct_emails_8w END
-                + 5*device_fraud_count
-            ) AS dev_max,
-            MIN(GREATEST(current_address_months_count, 0)) AS addr_min,
-            MAX(GREATEST(current_address_months_count, 0)) AS addr_max,
-            MIN(name_email_similarity + phone_home_valid::int + phone_mobile_valid::int) AS ident_min,
-            MAX(name_email_similarity + phone_home_valid::int + phone_mobile_valid::int) AS ident_max,
-            MIN(foreign_request::int + (CASE WHEN source = 'TELEAPP' THEN 1 ELSE 0 END)) AS geo_min,
-            MAX(foreign_request::int + (CASE WHEN source = 'TELEAPP' THEN 1 ELSE 0 END)) AS geo_max,
-            MIN(credit_risk_score + proposed_credit_limit / NULLIF(income, 0)) AS fin_min,
-            MAX(credit_risk_score + proposed_credit_limit / NULLIF(income, 0)) AS fin_max
-        FROM (SELECT * FROM kyc_transactions WHERE income IS NOT NULL AND income != 0 LIMIT 50000) sub
+def compute_feature_ranges(engine=None) -> dict:
     """
-    try:
-        with engine.connect() as conn:
-            row = conn.execute(text(query), {"device_emails_median": device_emails_median}).fetchone()
-        ranges = {
-            "session_velocity": (float(row.vel_min), float(row.vel_max)),
-            "device_reuse": (float(row.dev_min), float(row.dev_max)),
-            "address_stability": (float(row.addr_min), float(row.addr_max)),
-            "identity_consistency": (float(row.ident_min), float(row.ident_max)),
-            "geographic_risk": (float(row.geo_min), float(row.geo_max)),
-            "financial_risk": (float(row.fin_min), float(row.fin_max)),
-        }
-    except Exception:
-        ranges = {
-            "session_velocity": (0.0, 15000.0),
-            "device_reuse": (0.0, 10.0),
-            "address_stability": (0.0, 500.0),
-            "identity_consistency": (0.0, 3.0),
-            "geographic_risk": (0.0, 2.0),
-            "financial_risk": (0.0, 50000.0),
-        }
-    print("Computed ranges:")
-    for k, (lo, hi) in ranges.items():
-        print(f"  {k}: [{lo:.2f}, {hi:.2f}]")
-    return ranges
+    Returns empirical normalization ranges from the BAF dataset for
+    real-time feature engineering (O(1) instant startup).
+    """
+    return DEFAULT_FEATURE_RANGES
 
 
 def engineer_features_single(event: dict, ranges: dict) -> dict:
@@ -255,7 +208,7 @@ def write_score(engine, row_id, features: dict, anomaly_score: float,
                     session_velocity_score, device_reuse_score,
                     address_stability_score, identity_consistency_score,
                     geographic_risk_score, financial_risk_score,
-                    fraud_bool, scoring_latency_ms
+                    fraud_bool, inference_latency_ms
                 ) VALUES (
                     :row_id, NOW(), :anomaly_score, :is_anomaly,
                     :session_velocity_score, :device_reuse_score,

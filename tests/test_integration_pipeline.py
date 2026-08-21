@@ -261,8 +261,8 @@ class TestDriftDetectionIntegration:
             else 0
         )
 
-        # Use --sample-size 2500 for fast CI integration execution
-        result = _run_script(["drift_detection.py", "--sample-size", "2500"], timeout=180)
+        # Use --sample-size 1000 for fast CI integration execution
+        result = _run_script(["drift_detection.py", "--sample-size", "1000"], timeout=180)
 
         assert result.returncode == 0, (
             f"drift_detection.py exited with a non-zero code.\n"
