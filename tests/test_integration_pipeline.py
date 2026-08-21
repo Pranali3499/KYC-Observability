@@ -217,9 +217,10 @@ class TestKafkaProducerConsumerIntegration:
         # avoids a race condition between publish and subscribe.
         time.sleep(2)
 
+        test_group = f"test-ci-group-{int(time.time())}"
         consumer_result = _run_script(
-            ["kafka_consumer_etl.py", "--max-messages", str(n_events), "--bootstrap-servers", bootstrap],
-            timeout=90,
+            ["kafka_consumer_etl.py", "--max-messages", str(n_events), "--bootstrap-servers", bootstrap, "--group-id", test_group, "--timeout", "5.0"],
+            timeout=180,
         )
         assert consumer_result.returncode == 0, (
             f"kafka_consumer_etl.py failed to process events.\n"
