@@ -301,8 +301,11 @@ def main():
     print("Behavioral Observability Framework for KYC Onboarding")
     print("=" * 65)
 
-    start_http_server(args.metrics_port)
-    print(f"Prometheus metrics exposed at http://localhost:{args.metrics_port}/metrics")
+    try:
+        start_http_server(args.metrics_port)
+        print(f"Prometheus metrics exposed at http://localhost:{args.metrics_port}/metrics")
+    except OSError as e:
+        print(f"(non-fatal) Prometheus metrics server on port {args.metrics_port} not started: {e}")
 
     model = load_model()
     engine = get_engine()
@@ -328,19 +331,26 @@ def main():
 
     processed = 0
     anomalies_found = 0
+    empty_polls = 0
 
     try:
         while True:
             if args.max_messages and processed >= args.max_messages:
                 break
 
-            msg = consumer.poll(timeout=args.timeout)
+            msg = consumer.poll(timeout=1.0)
             if msg is None:
+                empty_polls += 1
                 if args.max_messages:
-                    print(f"No more messages after {args.timeout}s -- stopping "
-                          f"({processed}/{args.max_messages} processed).")
-                    break
+                    if processed > 0 and empty_polls >= 3:
+                        print(f"No more messages after {empty_polls}s idle -- stopping ({processed}/{args.max_messages} processed).")
+                        break
+                    if processed == 0 and empty_polls >= int(args.timeout):
+                        print(f"No messages arrived within {empty_polls}s -- stopping.")
+                        break
                 continue
+
+            empty_polls = 0
 
             if msg.error():
                 if msg.error().code() == KafkaError._PARTITION_EOF:
