@@ -70,6 +70,7 @@ pipeline {
                                 ln -sf /workspace/kyc-observability/*.pkl . 2>/dev/null || true
                                 ln -sf /workspace/kyc-observability/synthetic_id_documents . 2>/dev/null || true
                                 ln -sf /workspace/kyc-observability/biometric_parquet . 2>/dev/null || true
+                                ln -sf /workspace/kyc-observability/liveness_data . 2>/dev/null || true
                             fi
                         '''
                     } else {
