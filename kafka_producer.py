@@ -60,16 +60,7 @@ def load_sample_events(n_events: int, db_url: str = None) -> list[dict]:
         engine = create_engine(db_url)
     else:
         engine = get_engine()
-    # Fast sampling using TABLESAMPLE SYSTEM to avoid slow full-table scan & sort on 1M rows
-    try:
-        df = pd.read_sql(
-            f"SELECT * FROM {SOURCE_TABLE} TABLESAMPLE SYSTEM (5) LIMIT {n_events}", engine
-        )
-        if len(df) < n_events:
-            df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE} LIMIT {n_events}", engine)
-    except Exception:
-        df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE} LIMIT {n_events}", engine)
-
+    df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE} LIMIT {n_events}", engine)
     print(f"Loaded {len(df)} sample events")
     return df.to_dict(orient="records")
 

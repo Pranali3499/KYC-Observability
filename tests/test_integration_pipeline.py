@@ -104,11 +104,14 @@ def _run_script(args: list, timeout: int = 120) -> subprocess.CompletedProcess:
     functions, it invokes the script exactly the way a person running
     the pipeline manually would, via `python <script>.py <args>`.
     """
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
     return subprocess.run(
         [sys.executable] + args,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=env,
     )
 
 
@@ -201,7 +204,7 @@ class TestKafkaProducerConsumerIntegration:
                        # adjacent local runs.
 
         producer_result = _run_script(
-            ["kafka_producer.py", "--n-events", str(n_events), "--delay", "0.05", "--bootstrap-servers", bootstrap],
+            ["kafka_producer.py", "--n-events", str(n_events), "--delay", "0.0", "--bootstrap-servers", bootstrap],
             timeout=120,
         )
         assert producer_result.returncode == 0, (
@@ -258,8 +261,8 @@ class TestDriftDetectionIntegration:
             else 0
         )
 
-        # Use --sample-size 5000 for fast CI integration execution
-        result = _run_script(["drift_detection.py", "--sample-size", "5000"], timeout=300)
+        # Use --sample-size 2500 for fast CI integration execution
+        result = _run_script(["drift_detection.py", "--sample-size", "2500"], timeout=180)
 
         assert result.returncode == 0, (
             f"drift_detection.py exited with a non-zero code.\n"

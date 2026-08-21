@@ -145,14 +145,15 @@ def table_exists(engine, table_name: str) -> bool:
     return inspect(engine).has_table(table_name)
 
 
-def load_live(engine, reference: pd.DataFrame) -> tuple[pd.DataFrame, bool]:
+def load_live(engine, reference: pd.DataFrame, sample_size: int = None) -> tuple[pd.DataFrame, bool]:
     """
     Returns (live_df, is_synthetic). is_synthetic=True means LIVE_TABLE
     wasn't found and a synthetic drifted sample was generated instead.
     """
     if table_exists(engine, LIVE_TABLE):
         print(f"Reading live distribution from '{LIVE_TABLE}' ...")
-        df = pd.read_sql(f"SELECT * FROM {LIVE_TABLE}", engine)
+        limit_sql = f"LIMIT {sample_size}" if sample_size else ""
+        df = pd.read_sql(f"SELECT * FROM {LIVE_TABLE} {limit_sql}", engine)
         print(f"Loaded {len(df):,} live rows")
         return df, False
 
@@ -321,7 +322,7 @@ def main():
     sample_size = args.sample_size if args.sample_size > 0 else None
     reference = load_reference(engine, sample_size=sample_size)
     reference = score_reference_with_tuned_model(reference)
-    live, is_synthetic = load_live(engine, reference)
+    live, is_synthetic = load_live(engine, reference, sample_size=sample_size)
 
     report = run_drift_report(reference, live)
     write_report(report, engine, is_synthetic)
