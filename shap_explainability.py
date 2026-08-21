@@ -96,7 +96,8 @@ def load_data_and_model(db_url: str, n_samples: int):
 
     t0 = time.time()
     engine = create_engine(db_url)
-    df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE}", engine)
+    limit_clause = f"LIMIT {max(n_samples * 50, 25000)}" if (n_samples and n_samples < 50000) else ""
+    df = pd.read_sql(f"SELECT * FROM {SOURCE_TABLE} {limit_clause}", engine)
     _t(f"SELECT * FROM {SOURCE_TABLE} ({len(df):,} rows)", t0)
 
     t0 = time.time()
@@ -108,10 +109,13 @@ def load_data_and_model(db_url: str, n_samples: int):
     anomalies = df[df["is_anomaly"]]
     print(f"Total flagged anomalies in dataset: {len(anomalies):,}")
 
-    sample_size = min(n_samples, len(anomalies))
-    sample = anomalies.sample(n=sample_size, random_state=42)
-    print(f"Explaining a sample of {sample_size:,} flagged anomalies "
-          f"(SHAP on all {len(anomalies):,} would be slow -- a representative sample is standard practice)")
+    if n_samples is None or n_samples in (0, len(anomalies)):
+        sample = anomalies
+        print(f"Explaining ALL {len(anomalies):,} flagged anomalies across the dataset")
+    else:
+        sample_size = min(n_samples, len(anomalies))
+        sample = anomalies.sample(n=sample_size, random_state=42)
+        print(f"Explaining a sample of {sample_size:,} flagged anomalies")
 
     return model, engine, sample
 
@@ -215,8 +219,8 @@ def print_global_ranking(shap_values: np.ndarray, feature_names: list):
 def main():
     parser = argparse.ArgumentParser(description="Stage 7: SHAP explainability")
     parser.add_argument("--db-url", default=DEFAULT_DB_URL)
-    parser.add_argument("--n-samples", type=int, default=500,
-                         help="Number of flagged anomalies to explain (SHAP on the full flagged set would be slow)")
+    parser.add_argument("--n-samples", type=int, default=None,
+                         help="Number of flagged anomalies to explain (default: None for all flagged anomalies)")
     args = parser.parse_args()
 
     run_start = time.time()

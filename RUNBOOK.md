@@ -43,7 +43,28 @@ source venv/Scripts/activate  # on Windows: venv\Scripts\activate
 
 ---
 
-## 3. End-to-End Execution Sequence
+## 3. End-to-End Execution & Single-Trigger Pipeline
+
+### 3.0 Single-Trigger Execution (Recommended)
+Execute all 9 layers deterministically with one command or single click:
+
+```bash
+# Windows 1-Click:
+run_pipeline.bat
+
+# Windows Fast Demo:
+run_pipeline.bat fast
+
+# Linux / Jenkins Agent:
+./run_pipeline.sh fast
+
+# Enterprise Jenkins Pipeline (CI/CD):
+# Trigger via Jenkinsfile or http://localhost:8088
+```
+
+See [JENKINS_PIPELINE_GUIDE.md](file:///d:/kyc-observability/JENKINS_PIPELINE_GUIDE.md) for full CI/CD details.
+
+---
 
 ### Step 1: Pre-Ingestion Validation & Ingestion
 ```bash

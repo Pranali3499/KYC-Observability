@@ -50,6 +50,7 @@ from kafka_consumer_etl import (
     engineer_features_single,
     write_score,
     FEATURE_COLUMNS,
+    FEATURE_STORE_WRITE_LATENCY,
 )
 
 # --- Prometheus Observability Metrics ---
@@ -67,11 +68,6 @@ API_INFERENCE_LATENCY = Histogram(
     "kyc_api_inference_latency_ms",
     "Per-request feature engineering + model scoring latency in milliseconds",
     buckets=(5, 10, 20, 30, 50, 75, 100, 200, 500, 1000),
-)
-FEATURE_STORE_WRITE_LATENCY = Histogram(
-    "kyc_feature_store_write_latency_ms",
-    "Latency of persisting scored record to PostgreSQL feature store, in milliseconds",
-    buckets=(1, 5, 10, 20, 50, 100, 200, 500),
 )
 
 _state: dict = {}

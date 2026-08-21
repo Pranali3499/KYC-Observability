@@ -34,7 +34,30 @@ Layer 7: Observability   -->  Prometheus + Grafana + drift detection + analyst d
 
 Full results, methodology, and honest discussion of limitations are in the dissertation report.
 
-## Getting started
+## Quick Start & Single-Trigger Pipeline
+
+You can run the entire 9-stage end-to-end framework with **a single command / single trigger**:
+
+```bash
+# Windows 1-Click Master Runner:
+run_pipeline.bat
+
+# Windows Fast Demo Runner (~2 minutes for viva):
+run_pipeline.bat fast
+
+# Linux / macOS:
+./run_pipeline.sh fast
+
+# Direct Python Orchestrator:
+python run_all_pipeline.py --mode fast
+```
+
+### Enterprise Jenkins CI/CD & Continuous Training
+The framework includes a Declarative [Jenkinsfile](Jenkinsfile) providing automated test pyramid execution, JUnit reporting, multi-stage gate enforcement, and model artifact archiving. See [JENKINS_PIPELINE_GUIDE.md](JENKINS_PIPELINE_GUIDE.md) for full instructions.
+
+---
+
+## Getting started (Manual Step-by-Step)
 
 See [`RUNBOOK.md`](RUNBOOK.md) for full setup instructions, the complete execution order, and known issues with fixes.
 
