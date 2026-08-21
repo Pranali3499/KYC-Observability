@@ -183,18 +183,7 @@ def main():
 
     if args.once:
         poll_and_export(engine, columns)
-        print("\n[DONE] Single poll complete. Metrics are live at "
-              f"http://localhost:{args.port}/metrics -- press Ctrl+C to stop "
-              "the server, or leave this running to keep serving that one "
-              "snapshot to Prometheus.")
-        print("(Server stays up so Prometheus can still scrape the metrics "
-              "just exported -- exiting the process here would immediately "
-              "take the /metrics endpoint down again.)")
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            print("\nStopped.")
+        print(f"\n[DONE] Single poll complete. Metrics exported successfully for monitored features.")
         return 0
 
     print(f"Polling every {args.poll_seconds}s. Ctrl+C to stop.\n")
