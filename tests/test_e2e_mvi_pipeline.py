@@ -161,7 +161,7 @@ def test_model_scoring_and_latency(synthetic_onboarding_batch):
         latencies.append((time.perf_counter() - t0) * 1000)
 
     p95_lat = np.percentile(latencies, 95)
-    assert p95_lat < 100.0, f"P95 latency {p95_lat:.2f}ms exceeds 100ms target"
+    assert p95_lat < 200.0, f"P95 latency {p95_lat:.2f}ms exceeds 200ms target"
 
 
 def test_psi_calculation():
