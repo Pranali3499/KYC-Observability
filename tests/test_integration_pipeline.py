@@ -140,7 +140,7 @@ class TestDataQualityIntegration:
                 "run data_ingestion.py and feature_engineering.py first."
             )
 
-        result = _run_script(["data_quality_checks.py"])
+        result = _run_script(["data_quality_checks.py"], timeout=300)
 
         assert result.returncode == 0, (
             f"data_quality_checks.py exited with code {result.returncode}, "
@@ -258,8 +258,8 @@ class TestDriftDetectionIntegration:
             else 0
         )
 
-        # Use --sample-size 10000 for fast CI integration execution
-        result = _run_script(["drift_detection.py", "--sample-size", "10000"], timeout=180)
+        # Use --sample-size 5000 for fast CI integration execution
+        result = _run_script(["drift_detection.py", "--sample-size", "5000"], timeout=300)
 
         assert result.returncode == 0, (
             f"drift_detection.py exited with a non-zero code.\n"

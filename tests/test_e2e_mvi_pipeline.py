@@ -149,11 +149,15 @@ def test_model_scoring_and_latency(synthetic_onboarding_batch):
         "financial_risk_score",
     ]
     X = feats[feature_cols]
+    X_arr = X.to_numpy()
+
+    # Warm-up pass
+    _ = model.decision_function(X_arr[:1])
 
     latencies = []
-    for i in range(len(X)):
+    for i in range(len(X_arr)):
         t0 = time.perf_counter()
-        _ = -model.decision_function(X.iloc[i : i + 1])[0]
+        _ = -model.decision_function(X_arr[i : i + 1])[0]
         latencies.append((time.perf_counter() - t0) * 1000)
 
     p95_lat = np.percentile(latencies, 95)

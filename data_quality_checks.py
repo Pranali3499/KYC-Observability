@@ -211,10 +211,14 @@ def null_rate_check(engine, table_name: str, threshold: float = NULL_RATE_THRESH
     if cols.empty:
         return results
 
-    with engine.connect() as conn:
-        total_rows = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+    col_names = cols["column_name"].tolist()
+    select_clauses = [f'COUNT(*) FILTER (WHERE "{col}" IS NULL) AS "{col}"' for col in col_names]
+    query = f'SELECT COUNT(*) AS _total_rows, {", ".join(select_clauses)} FROM {table_name}'
 
-    if not total_rows:
+    with engine.connect() as conn:
+        row = conn.execute(text(query)).mappings().fetchone()
+
+    if not row or not row["_total_rows"]:
         results.append(
             {
                 "table_name": table_name,
@@ -226,84 +230,77 @@ def null_rate_check(engine, table_name: str, threshold: float = NULL_RATE_THRESH
         )
         return results
 
-    with engine.connect() as conn:
-        for col in cols["column_name"]:
-            null_count = conn.execute(
-                text(f'SELECT COUNT(*) FROM {table_name} WHERE "{col}" IS NULL')
-            ).scalar()
-            null_rate = null_count / total_rows
-            status = "PASS" if null_rate <= threshold else "FAIL"
-            results.append(
-                {
-                    "table_name": table_name,
-                    "check_type": "null_rate",
-                    "column_name": col,
-                    "status": status,
-                    "details": f"{null_count}/{total_rows} nulls ({null_rate:.4%})",
-                }
-            )
+    total_rows = row["_total_rows"]
+    for col in col_names:
+        null_count = row[col]
+        null_rate = null_count / total_rows
+        status = "PASS" if null_rate <= threshold else "FAIL"
+        results.append(
+            {
+                "table_name": table_name,
+                "check_type": "null_rate",
+                "column_name": col,
+                "status": status,
+                "details": f"{null_count}/{total_rows} nulls ({null_rate:.4%})",
+            }
+        )
     return results
 
 
 def value_range_check(engine, table_name: str, ranges: dict) -> list[dict]:
     """
     For columns with a known valid range (e.g. behavioral scores should
-    be 0-1), counts out-of-range rows. Skips columns that don't exist
-    in this table rather than failing -- lets one range dict be reused
-    across tables.
-
-    Also skips columns whose ACTUAL database type is boolean (detected
-    via information_schema, not assumed) -- a boolean column has no
-    numeric range to violate (it's always exactly TRUE or FALSE by
-    definition), and PostgreSQL rejects a boolean/integer comparison
-    outright rather than silently coercing it. Confirmed live:
-    id_number_exact_match in document_ocr_results is stored as a real
-    boolean column (written by document_ocr.py's original Python
-    True/False values), and querying it with "< 0 OR > 1" crashed with
-    "operator does not exist: boolean < integer" -- this affects any
-    column of that type, not just this one specific column, so the fix
-    is general rather than a one-column special case.
+    be 0-1), counts out-of-range rows using a single aggregated query.
     """
     results = []
     col_info = get_columns(engine, table_name)
     cols = set(col_info["column_name"].tolist())
     dtypes = dict(zip(col_info["column_name"], col_info["data_type"]))
 
-    with engine.connect() as conn:
-        for col, (low, high) in ranges.items():
-            if col not in cols:
-                continue
+    checked_cols = {}
+    for col, (low, high) in ranges.items():
+        if col not in cols:
+            continue
 
-            if dtypes.get(col) == "boolean":
-                results.append(
-                    {
-                        "table_name": table_name,
-                        "check_type": "value_range",
-                        "column_name": col,
-                        "status": "PASS",
-                        "details": "Column is a native boolean type -- always trivially "
-                                   "in-range (TRUE/FALSE), numeric range check skipped.",
-                    }
-                )
-                continue
-
-            violation_count = conn.execute(
-                text(
-                    f'SELECT COUNT(*) FROM {table_name} '
-                    f'WHERE "{col}" IS NOT NULL AND ("{col}" < :low OR "{col}" > :high)'
-                ),
-                {"low": low, "high": high},
-            ).scalar()
-            status = "PASS" if violation_count == 0 else "FAIL"
+        if dtypes.get(col) == "boolean":
             results.append(
                 {
                     "table_name": table_name,
                     "check_type": "value_range",
                     "column_name": col,
-                    "status": status,
-                    "details": f"{violation_count} rows outside [{low}, {high}]",
+                    "status": "PASS",
+                    "details": "Column is a native boolean type -- always trivially "
+                               "in-range (TRUE/FALSE), numeric range check skipped.",
                 }
             )
+            continue
+
+        checked_cols[col] = (low, high)
+
+    if not checked_cols:
+        return results
+
+    select_clauses = [
+        f'COUNT(*) FILTER (WHERE "{col}" IS NOT NULL AND ("{col}" < {low} OR "{col}" > {high})) AS "{col}"'
+        for col, (low, high) in checked_cols.items()
+    ]
+    query = f'SELECT {", ".join(select_clauses)} FROM {table_name}'
+
+    with engine.connect() as conn:
+        row = conn.execute(text(query)).mappings().fetchone()
+
+    for col, (low, high) in checked_cols.items():
+        violation_count = row[col] if (row and col in row) else 0
+        status = "PASS" if violation_count == 0 else "FAIL"
+        results.append(
+            {
+                "table_name": table_name,
+                "check_type": "value_range",
+                "column_name": col,
+                "status": status,
+                "details": f"{violation_count} rows outside [{low}, {high}]",
+            }
+        )
     return results
 
 
