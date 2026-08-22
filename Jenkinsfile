@@ -113,14 +113,15 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 2: Pre-Ingestion Data Validation Gate') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 2: PRE-INGESTION DATA VALIDATION & DEDUPLICATION GATE <<<'
                 echo '=================================================================='
                 script {
-                    def sampleSize = (params.PIPELINE_MODE == 'FAST_DEMO') ? '25000' : '50000'
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def sampleSize = (mode == 'FAST_DEMO') ? '25000' : '50000'
                     def cmd = "python pre_ingestion_validator.py --csv Base.csv --sample-size ${sampleSize}"
                     if (isUnix()) { sh cmd } else { bat cmd }
                 }
@@ -132,14 +133,15 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 3: Feature Engineering & Data Quality Gate') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 3: BEHAVIORAL FEATURE ENGINEERING & DATA QUALITY <<<'
                 echo '=================================================================='
                 script {
-                    def featSampleArg = (params.PIPELINE_MODE == 'FAST_DEMO') ? '--sample-size 25000' : ''
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def featSampleArg = (mode == 'FAST_DEMO') ? '--sample-size 25000' : '--sample-size 50000'
                     if (isUnix()) {
                         sh """
                             python feature_engineering.py ${featSampleArg}
@@ -160,14 +162,15 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 4: Cross-Dataset Model Generalization') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 4: CROSS-DATASET GENERALIZATION EVALUATION <<<'
                 echo '=================================================================='
                 script {
-                    def sampleSize = (params.PIPELINE_MODE == 'FAST_DEMO') ? '10000' : '50000'
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def sampleSize = (mode == 'FAST_DEMO') ? '10000' : '50000'
                     def cmd = "python cross_dataset_evaluation.py --sample-size ${sampleSize}"
                     if (isUnix()) { sh cmd } else { bat cmd }
                 }
@@ -179,15 +182,16 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 5: SHAP Explainability & Counterfactual Recourse') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 5: SHAP EXPLAINABILITY & COUNTERFACTUAL RECOURSE <<<'
                 echo '=================================================================='
                 script {
-                    def shapSamples = (params.PIPELINE_MODE == 'FAST_DEMO') ? '500' : '2000'
-                    def cfSamples   = (params.PIPELINE_MODE == 'FAST_DEMO') ? '100' : '500'
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def shapSamples = (mode == 'FAST_DEMO') ? '500' : '2000'
+                    def cfSamples   = (mode == 'FAST_DEMO') ? '100' : '500'
                     if (isUnix()) {
                         sh """
                             python shap_explainability.py --n-samples ${shapSamples}
@@ -208,7 +212,7 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 6: Biometric Sub-components & Decision Gate') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
@@ -245,15 +249,16 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 7: Real-Time Kafka Streaming & Scoring ETL') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 7: REAL-TIME KAFKA STREAMING & SCORING ETL <<<'
                 echo '=================================================================='
                 script {
-                    def nOnboard = (params.PIPELINE_MODE == 'FAST_DEMO') ? '50' : '100'
-                    def nBio     = (params.PIPELINE_MODE == 'FAST_DEMO') ? '25' : '50'
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def nOnboard = (mode == 'FAST_DEMO') ? '50' : '100'
+                    def nBio     = (mode == 'FAST_DEMO') ? '25' : '50'
                     if (isUnix()) {
                         sh """
                             python kafka_producer.py --n-events ${nOnboard} --delay 0.01
@@ -278,14 +283,15 @@ pipeline {
         // ---------------------------------------------------------------------
         stage('Stage 8: Continuous Drift Detection & Canary Rollout') {
             when {
-                expression { params.PIPELINE_MODE != 'CI_UNIT_ONLY' }
+                expression { (params.PIPELINE_MODE ?: 'FAST_DEMO') != 'CI_UNIT_ONLY' }
             }
             steps {
                 echo '=================================================================='
                 echo '>>> STAGE 8: DRIFT DETECTION, RETRAINING & CANARY ROLLOUT <<<'
                 echo '=================================================================='
                 script {
-                    def driftSampleSize = (params.PIPELINE_MODE == 'FAST_DEMO') ? '25000' : '50000'
+                    def mode = params.PIPELINE_MODE ?: 'FAST_DEMO'
+                    def driftSampleSize = (mode == 'FAST_DEMO') ? '25000' : '50000'
                     if (isUnix()) {
                         sh """
                             python drift_detection.py --sample-size ${driftSampleSize}

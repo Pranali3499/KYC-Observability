@@ -137,7 +137,9 @@ def main():
     # Stage 3: Feature Engineering & Database Data Quality Checks
     # -------------------------------------------------------------------------
     print_banner("Stage 3: Behavioral Feature Engineering & Data Quality Checks")
-    run_step("Behavioral Feature Engineering (Risk Scores)", [PYTHON_EXE, "feature_engineering.py"])
+    feat_sample_size = "25000" if args.mode == "fast" else "50000"
+    run_step("Behavioral Feature Engineering (Risk Scores)",
+             [PYTHON_EXE, "feature_engineering.py", "--sample-size", feat_sample_size])
     run_step("Post-Ingestion Data Quality Checks", [PYTHON_EXE, "data_quality_checks.py"])
 
     # -------------------------------------------------------------------------

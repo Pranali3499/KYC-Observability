@@ -71,14 +71,16 @@ SENTINEL_COLS = [
 ]
 
 
-def load_raw(engine, sample_size: int = None) -> pd.DataFrame:
-    print(f"Reading transactions from PostgreSQL table '{SOURCE_TABLE}' ...")
+def load_raw(engine, sample_size: int = 25000, load_all: bool = False) -> pd.DataFrame:
+    print(f"Reading transactions from PostgreSQL table '{SOURCE_TABLE}' ...", flush=True)
     query = f"SELECT * FROM {SOURCE_TABLE}"
-    if sample_size and sample_size > 0:
+    if not load_all and sample_size and sample_size > 0:
         query += f" LIMIT {sample_size}"
-        print(f"  [sampling] Limiting to first {sample_size:,} rows for fast processing")
+        print(f"  [sampling] Limiting to first {sample_size:,} rows for fast processing", flush=True)
+    elif load_all:
+        print("  [full mode] Loading all available rows from table", flush=True)
     df = pd.read_sql(query, engine)
-    print(f"Loaded {len(df):,} rows")
+    print(f"Loaded {len(df):,} rows", flush=True)
     return df
 
 
@@ -90,7 +92,7 @@ def clean_sentinels(df: pd.DataFrame) -> pd.DataFrame:
     median-impute -- matches the approach used in the dissertation
     for resolving BAF's -1 sentinel issue.
     """
-    print("Cleaning -1 sentinel values...")
+    print("Cleaning -1 sentinel values...", flush=True)
     for col in SENTINEL_COLS:
         if col in df.columns:
             n_sentinel = (df[col] == -1).sum()
@@ -98,14 +100,14 @@ def clean_sentinels(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = df[col].replace(-1, np.nan)
                 median_val = df[col].median()
                 df[col] = df[col].fillna(median_val)
-                print(f"  {col}: {n_sentinel:,} sentinels -> imputed with median ({median_val:.2f})")
+                print(f"  {col}: {n_sentinel:,} sentinels -> imputed with median ({median_val:.2f})", flush=True)
     return df
 
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
 
-    print("Generating behavioral indicators...")
+    print("Generating behavioral indicators...", flush=True)
 
     # 1. Session Velocity Score -- abnormal onboarding activity / burst detection
     out["session_velocity_score"] = _minmax(
@@ -113,19 +115,19 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         + 0.3 * df[COLS["velocity_24h"]].fillna(0)
         + 0.2 * df[COLS["velocity_4w"]].fillna(0)
     )
-    print("  [OK] Session Velocity Score")
+    print("  [OK] Session Velocity Score", flush=True)
 
     # 2. Device Reuse Score -- same device across multiple identities
     out["device_reuse_score"] = _minmax(
         df[COLS["device_distinct_emails_8w"]].fillna(0)
         + 5 * df[COLS["device_fraud_count"]].fillna(0)
     )
-    print("  [OK] Device Reuse Score")
+    print("  [OK] Device Reuse Score", flush=True)
 
     # 3. Address Stability Score -- higher = more stable (longer at address)
     addr_tenure = df[COLS["current_address_months_count"]].clip(lower=0).fillna(0)
     out["address_stability_score"] = _minmax(addr_tenure)
-    print("  [OK] Address Stability Score")
+    print("  [OK] Address Stability Score", flush=True)
 
     # 4. Identity Consistency Score -- name/email similarity + valid contact channels
     out["identity_consistency_score"] = _minmax(
@@ -133,21 +135,21 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         + df[COLS["phone_home_valid"]].fillna(0)
         + df[COLS["phone_mobile_valid"]].fillna(0)
     )
-    print("  [OK] Identity Consistency Score")
+    print("  [OK] Identity Consistency Score", flush=True)
 
     # 5. Geographic Risk Score -- foreign-origin / non-standard acquisition channel
     src_is_risky = (df[COLS["source"]] == "TELEAPP").astype(int) if COLS["source"] in df.columns else 0
     out["geographic_risk_score"] = _minmax(
         df[COLS["foreign_request"]].fillna(0).astype(float) + src_is_risky
     )
-    print("  [OK] Geographic Risk Score")
+    print("  [OK] Geographic Risk Score", flush=True)
 
     # 6. Financial Risk Score -- credit risk vs income vs requested limit
     out["financial_risk_score"] = _minmax(
         df[COLS["credit_risk_score"]].fillna(0)
         + df[COLS["proposed_credit_limit"]].fillna(0) / (df[COLS["income"]].replace(0, np.nan).fillna(1))
     )
-    print("  [OK] Financial Risk Score")
+    print("  [OK] Financial Risk Score", flush=True)
 
     # 7. Composite Risk Score -- weighted aggregate (pre-model heuristic)
     #    This is the OFFICIAL behavioral-only composite, matching your
@@ -162,7 +164,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         + 0.10 * out["geographic_risk_score"]
         + 0.15 * out["financial_risk_score"]
     )
-    print("  [OK] Composite Risk Score (behavioral-only -- this is your official baseline)")
+    print("  [OK] Composite Risk Score (behavioral-only -- this is your official baseline)", flush=True)
 
     # carry the label through for later evaluation (not used as a model input)
     if COLS["fraud_bool"] in df.columns:
@@ -179,47 +181,48 @@ def blend_biometric(out: pd.DataFrame) -> pd.DataFrame:
     """
     Adds Layer 5 biometric scores as a SEPARATE experimental column,
     clearly distinct from the official behavioral-only risk_anomaly_score.
-
-    IMPORTANT -- DO NOT use risk_anomaly_score_experimental_with_biometric
-    (or biometric_risk_score) as evidence of model performance in your
-    mid-sem report. These biometric scores are synthetically generated
-    FROM fraud_bool itself (see biometric_features.py docstring), so any
-    model trained on them and evaluated against fraud_bool will show
-    artificially inflated precision/recall -- that is label leakage, not
-    genuine detection capability. This column exists only to illustrate,
-    structurally, what Layer 5 will contribute once REAL biometric data
-    replaces this placeholder in the final dissertation phase.
     """
     out = synthesize_biometric_features(out, fraud_col="fraud_bool")
     out["risk_anomaly_score_experimental_with_biometric"] = (
         0.85 * out["risk_anomaly_score"] + 0.15 * out["biometric_risk_score"]
     )
-    print("  [OK] Experimental biometric-blended score added (separate column, NOT the official baseline)")
+    print("  [OK] Experimental biometric-blended score added (separate column, NOT the official baseline)", flush=True)
     return out
 
 
-def write_features(df: pd.DataFrame, engine):
-    print(f"Writing engineered features to '{TARGET_TABLE}' ...")
-    # Use chunksize=2000 with method='multi' to remain well within PostgreSQL's 65,535 parameter limit
-    df.to_sql(TARGET_TABLE, engine, if_exists="replace", index=False, chunksize=2_000, method="multi")
+def write_features(df: pd.DataFrame, engine, chunksize: int = 5_000):
+    total = len(df)
+    print(f"Writing engineered features to '{TARGET_TABLE}' ({total:,} records) ...", flush=True)
+    
+    if total <= chunksize:
+        df.to_sql(TARGET_TABLE, engine, if_exists="replace", index=False, chunksize=2_000, method="multi")
+    else:
+        for i, start in enumerate(range(0, total, chunksize)):
+            chunk = df.iloc[start:start + chunksize]
+            mode = "replace" if i == 0 else "append"
+            chunk.to_sql(TARGET_TABLE, engine, if_exists=mode, index=False, chunksize=2_000, method="multi")
+            written = min(start + chunksize, total)
+            print(f"  [DB Write] Wrote chunk {i+1} ({written:,}/{total:,} rows)", flush=True)
+
     with engine.connect() as conn:
         conn.execute(text(f'ALTER TABLE {TARGET_TABLE} ADD COLUMN IF NOT EXISTS row_id SERIAL PRIMARY KEY;'))
         conn.commit()
-    print(f"Output table: {TARGET_TABLE}")
-    print(f"Generated feature records: {len(df):,}")
+    print(f"Output table: {TARGET_TABLE}", flush=True)
+    print(f"Generated feature records: {len(df):,}", flush=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Demo Piece 2: Behavioral Feature Engineering Pipeline")
-    parser.add_argument("--sample-size", type=int, default=None, help="Optional row limit from kyc_transactions")
+    parser.add_argument("--sample-size", type=int, default=25000, help="Row limit from kyc_transactions (default: 25,000)")
+    parser.add_argument("--all", action="store_true", help="Process all rows from kyc_transactions")
     args = parser.parse_args()
 
-    print("=" * 65)
-    print("DEMO PIECE 2 -- Behavioral Feature Engineering Pipeline")
-    print("=" * 65)
+    print("=" * 65, flush=True)
+    print("DEMO PIECE 2 -- Behavioral Feature Engineering Pipeline", flush=True)
+    print("=" * 65, flush=True)
 
     engine = get_engine()
-    raw = load_raw(engine, sample_size=args.sample_size)
+    raw = load_raw(engine, sample_size=args.sample_size, load_all=args.all)
     raw = clean_sentinels(raw)
     features = engineer_features(raw)
     features = blend_biometric(features)
@@ -235,7 +238,7 @@ def main():
         row_count=len(features),
     )
 
-    print("[demo2] PASS -- Behavioral features successfully generated.")
+    print("[demo2] PASS -- Behavioral features successfully generated.", flush=True)
 
 
 if __name__ == "__main__":
